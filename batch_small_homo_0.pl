@@ -79,6 +79,12 @@ channel(C1,C2,0,1) :- core(C1), core(C2).
 del(X,[X|Tail],Tail).
 del(X,[Y|Tail],[Y|Tail1]):- del(X,Tail,Tail1).
 
+% find max in list
+maxList([A],A).
+maxList([A|List],Max):-
+ maxList(List,Max1),
+ (A>=Max1, Max=A; A<Max1, Max=Max1).
+
 % valid schedule --> valid core and valid tasks
 isSchedule(schedule(C, [T|Ts])):- core(C), isTaskSet(T, Ts).
 isTaskSet(T, [To|Ts]):- task(T), isTaskSet(To, Ts).
@@ -111,43 +117,46 @@ isSolution([], _):- false.
 % Calculate execution time for solution
 execution_time(solution([Schdl|Schdls]), TotalET):-
   isSolution(solution([Schdl|Schdls])),
-  execution_time([Schdl|Schdls], TotalET).
+  schedule_execution_time([Schdl|Schdls], [], TotalET).
 
-execution_time([schedule(_, Schdl)|Schdls], TotalET):-
-  execution_time(Schdl, ET),
-  execution_time(Schdls, SubTotalET),
-  TotalET is SubTotalET + ET.
+schedule_execution_time([], Res, MaxRes):- maxList(Res, MaxRes).
 
+schedule_execution_time([schedule(_,Ts)|Schdls], ETs, Res):-
+  tasks_execution_time(Ts, ET),
+  append([ET], ETs, NewETs),
+  schedule_execution_time(Schdls, NewETs, Res).
 
 % Calculate execution time for schedule
-execution_time(schedule(_, [T|Ts]), TotalET):-
-  execution_time([T|Ts], TotalET).
-
-execution_time([T|Ts], TotalET):-
+tasks_execution_time([T|Ts], TotalET):-
   process_cost(T, _, TC),
-  execution_time(Ts, ET),
+  tasks_execution_time(Ts, ET),
   TotalET is ET+TC.
 
-execution_time([], TotalET):- TotalET is 0.
+tasks_execution_time([], TotalET):- TotalET is 0.
+
 
 % create valid solution for the data above
-create_solution(Solutions):-
-  create_solution([], [], Solutions).
+create_solution(TotalET):-
+  create_solution([], [], [], Solution),
+  schedule_execution_time(Solution, [], TotalET).
 
-create_solution(ScheduleList, _, ScheduleList):-
+
+create_solution(ScheduleList, _, _, ScheduleList):-
   isSolution(solution(ScheduleList)), !.
 
-create_solution(ScheduleList, TakenTasks, Solution):-
-  create_schedule(TakenTasks, schedule(Core, TaskSet)),
+create_solution(ScheduleList, TakenCores, TakenTasks, Solution):-
+  create_schedule(TakenCores, TakenTasks, schedule(Core, TaskSet)),
+  append(TakenCores, [Core], NewCores),
   append(TakenTasks, TaskSet, NewTasks),
   list_to_set(NewTasks, NewTakenTasks),
+  list_to_set(NewCores, NewTakenCores),
   append([schedule(Core, TaskSet)], ScheduleList, NewScheduleList),
-  create_solution(NewScheduleList, NewTakenTasks, Solution).
+  create_solution(NewScheduleList, NewTakenCores, NewTakenTasks, Solution).
 
 
-create_schedule(TakenTasks, schedule(RndmCore, TaskSet)):-
+create_schedule(TakenCores, TakenTasks, schedule(RndmCore, TaskSet)):-
   findall(C, core(C), Cores),
-  get_rndm_elem(Cores, [], RndmCore),
+  get_rndm_elem(Cores, TakenCores, RndmCore),
 
   findall(T, task(T), AllTasks),
   gen_rndm_list(AllTasks, TakenTasks, TaskSet).
@@ -177,7 +186,7 @@ get_rndm_elem(List, TakenElements, RndmElem):-
   length(Rem, Len),
   Len1 is Len - 1,
   random_between(0, Len1, RndmIndex),
-  nth0(RndmIndex, Rem, RndmElem).
+  nth0(RndmIndex, Rem, RndmElem), !.
 
 % TODO:find optimal solution
 %find_optimal(C):-
