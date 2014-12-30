@@ -52,9 +52,13 @@ depends_on(_,_,_) :- fail.
 %In this benchmark every core can execute a given task as fast (i.e. homogeneous system)
 process_cost(t1,C,100) :- core(C).
 process_cost(t2,C,20) :- core(C).
+process_cost(t2,C,10) :- core(C).
 process_cost(t3,C,30) :- core(C).
+process_cost(t3,C,20) :- core(C).
 process_cost(t4,C,40) :- core(C).
+process_cost(t4,C,30) :- core(C).
 process_cost(t5,C,60) :- core(C).
+process_cost(t5,C,50) :- core(C).
 process_cost(t6,C,70) :- core(C).
 process_cost(t7,C,80) :- core(C).
 
@@ -84,6 +88,18 @@ maxList([A],A).
 maxList([A|List],Max):-
  maxList(List,Max1),
  (A>=Max1, Max=A; A<Max1, Max=Max1).
+
+% find min process_cost() in list
+minList([X], X) :- !.
+minList([process_cost(T,C,PC),
+                   process_cost(T1,C1, PC1)|Tail],
+                   Res):-
+    ( PC > PC1 ->
+        minList([process_cost(T1,C1,PC1)|Tail], Res)
+    ;
+        minList([process_cost(T,C, PC)|Tail], Res)
+    ).
+
 
 % valid schedule --> valid core and valid tasks
 isSchedule(schedule(C, [T|Ts])):- core(C), isTaskSet(T, Ts).
@@ -119,7 +135,8 @@ execution_time(solution([Schdl|Schdls]), TotalET):-
   isSolution(solution([Schdl|Schdls])),
   schedule_execution_time([Schdl|Schdls], [], TotalET).
 
-schedule_execution_time([], Res, MaxRes):- maxList(Res, MaxRes).
+schedule_execution_time([], TotalETs, MaxTotalET):-
+  maxList(TotalETs, MaxTotalET).
 
 schedule_execution_time([schedule(_,Ts)|Schdls], ETs, Res):-
   tasks_execution_time(Ts, ET),
@@ -136,14 +153,14 @@ tasks_execution_time([], TotalET):- TotalET is 0.
 
 
 % create valid solution for the data above
-create_solution(TotalET):-
-  create_solution([], [], [], Solution),
-  schedule_execution_time(Solution, [], TotalET).
+create_solution(Solution):-
+  create_solution([], [], [], Solution).
 
 
 create_solution(ScheduleList, _, _, ScheduleList):-
   isSolution(solution(ScheduleList)), !.
 
+% create randomized solution
 create_solution(ScheduleList, TakenCores, TakenTasks, Solution):-
   create_schedule(TakenCores, TakenTasks, schedule(Core, TaskSet)),
   append(TakenCores, [Core], NewCores),
@@ -153,7 +170,7 @@ create_solution(ScheduleList, TakenCores, TakenTasks, Solution):-
   append([schedule(Core, TaskSet)], ScheduleList, NewScheduleList),
   create_solution(NewScheduleList, NewTakenCores, NewTakenTasks, Solution).
 
-
+% create randomized schedule
 create_schedule(TakenCores, TakenTasks, schedule(RndmCore, TaskSet)):-
   findall(C, core(C), Cores),
   get_rndm_elem(Cores, TakenCores, RndmCore),
@@ -179,6 +196,16 @@ gen_rndm_list(Len, List, TakenElems, RES):-
   append([RndmTask], SubRes, RES),
   !.
 
+add_to_schedules(ProcessCost, NewSol):-
+  create_solution(Sol),
+  find_optimal_PC(t2, PC),
+  maplist(add(ProcessCost), Sol, NewSol).
+
+add(process_cost(Task, Core, _), schedule(Core, Tasks),
+    schedule(Core, NewTasks)):-
+      append(Tasks, [Task], NewTasks).
+
+
 
 % get list with random element (not in TakenElems)
 get_rndm_elem(List, TakenElements, RndmElem):-
@@ -188,7 +215,23 @@ get_rndm_elem(List, TakenElements, RndmElem):-
   random_between(0, Len1, RndmIndex),
   nth0(RndmIndex, Rem, RndmElem), !.
 
-% TODO:find optimal solution
-%find_optimal(C):-
+
+find_optimal_PC(Task, MinPC):-
+  findall(process_cost(Task, Core, Cost),
+          process_cost(Task, Core, Cost), PCTasks),
+  minList(PCTasks, MinPC).
+
+find_optimal([], PCs, PCs).
+
+find_optimal([Task|Tasks], Schedules, Res):-
+  find_optimal_PC(Task, MinPC),
+  append(MinPC, Schedules, NewPCs),
+  find_optimal(Tasks, NewPCs, Res).
   %isSolution(isSolution(C)).
+
+find_optimal(Res):-
+  findall(T, task(T), Tasks),
+  find_optimal(Tasks, [], Res).
+
+
 
