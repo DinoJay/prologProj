@@ -1,8 +1,8 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
-%          batch_small_homo.pl          %
+%         batch_small_hetero.pl         %
 %                                       %
 %    Scheduling of a small batch of     %
-%   independent tasks on a homogeoneous %
+%  independent tasks on a heterogeneous %
 %                system                 %
 %                                       %
 %       Declarative Programming         %
@@ -37,11 +37,11 @@ task(t7).
 %% Dependencies %%
 %%%%%%%%%%%%%%%%%%
 % The execution order dependencies between tasks
-% depends_on(Ta,Tb,Data): before task 'Ta' can be executed,
+% depends_on(Ta,Tb,Data): before task 'Ta' can be executed, 
 % task 'Tb' must have been executed and thereafter 'Data' megabytes of data (result of/produced by 'Tb') must have been moved from the processor that executed 'Tb' to the processor that will execute 'Ta'.
 
 %In this benchmark there are no dependencies between tasks.
-depends_on(_,_,_) :- fail.
+depends_on(_,_,_) :- fail. 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%   Processing Costs   %%%
@@ -49,18 +49,28 @@ depends_on(_,_,_) :- fail.
 % Specifies how long the processing of each task takes on each core.
 % process_cost(T,C,Time): It takes 'Time' ms to execute task 'T' on core 'C'.
 
-%In this benchmark every core can execute a given task as fast (i.e. homogeneous system)
-process_cost(t1,C,100) :- core(C).
-process_cost(t2,C,20) :- core(C).
-process_cost(t2,C,10) :- core(C).
-process_cost(t3,C,30) :- core(C).
-process_cost(t3,C,20) :- core(C).
-process_cost(t4,C,40) :- core(C).
-process_cost(t4,C,30) :- core(C).
-process_cost(t5,C,60) :- core(C).
-process_cost(t5,C,50) :- core(C).
-process_cost(t6,C,70) :- core(C).
-process_cost(t7,C,80) :- core(C).
+%In this benchmark c1,c4 processes tasks 10% faster/slower than c2 & c3 respectively. 
+process_cost(t1,c1,90) :- !.
+process_cost(t1,c4,110) :- !.
+process_cost(t1,C,100) :- core(C),C \= c1,C \= c4.
+process_cost(t2,c1,18) :- !.
+process_cost(t2,c4,22) :- !.
+process_cost(t2,C,20) :- core(C),C \= c1,C \= c4.
+process_cost(t3,c1,27) :- !.
+process_cost(t3,c4,33) :- !.
+process_cost(t3,C,30) :- core(C),C \= c1,C \= c4.
+process_cost(t4,c1,36) :- !.
+process_cost(t4,c4,44) :- !.
+process_cost(t4,C,40) :- core(C),C \= c1,C \= c4.
+process_cost(t5,c1,54) :- !.
+process_cost(t5,c4,66) :- !.
+process_cost(t5,C,60) :- core(C),C \= c1,C \= c4.
+process_cost(t6,c1,63) :- !.
+process_cost(t6,c4,77) :- !.
+process_cost(t6,C,70) :- core(C),C \= c1,C \= c4.
+process_cost(t7,c1,72) :- !.
+process_cost(t7,c4,88) :- !.
+process_cost(t7,C,80) :- core(C),C \= c1,C \= c4.
 
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
