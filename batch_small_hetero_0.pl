@@ -37,11 +37,11 @@ task(t7).
 %% Dependencies %%
 %%%%%%%%%%%%%%%%%%
 % The execution order dependencies between tasks
-% depends_on(Ta,Tb,Data): before task 'Ta' can be executed, 
+% depends_on(Ta,Tb,Data): before task 'Ta' can be executed,
 % task 'Tb' must have been executed and thereafter 'Data' megabytes of data (result of/produced by 'Tb') must have been moved from the processor that executed 'Tb' to the processor that will execute 'Ta'.
 
 %In this benchmark there are no dependencies between tasks.
-depends_on(_,_,_) :- fail. 
+depends_on(_,_,_) :- fail.
 
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%   Processing Costs   %%%
@@ -49,7 +49,7 @@ depends_on(_,_,_) :- fail.
 % Specifies how long the processing of each task takes on each core.
 % process_cost(T,C,Time): It takes 'Time' ms to execute task 'T' on core 'C'.
 
-%In this benchmark c1,c4 processes tasks 10% faster/slower than c2 & c3 respectively. 
+%In this benchmark c1,c4 processes tasks 10% faster/slower than c2 & c3 respectively.
 process_cost(t1,c1,90) :- !.
 process_cost(t1,c4,110) :- !.
 process_cost(t1,C,100) :- core(C),C \= c1,C \= c4.
