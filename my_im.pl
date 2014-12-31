@@ -1,7 +1,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%  My Implementation %%%
 % quite sketchy, but first important functions:
-% create solution, find_optimal
+% find_heuristically, find_optimal
 % check below
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -78,61 +78,38 @@ tasks_execution_time([T|Ts], TotalET):-
 tasks_execution_time([], TotalET):- TotalET is 0.
 
 
-% create valid solution for the data above
-create_solution(Solution):-
-  create_solution([], [], [], Solution).
+%get_random_pc(Cores, Task, process_cost(Task, Core, Time)):-
+  %get_pc(process_cost(Task, Core, Time)).
 
-create_solution(ScheduleList, _, _, ScheduleList):-
-  isSolution(solution(ScheduleList)), !.
+get_random_pc(Cores, Task, process_cost(Task, Core, Time)):-
+  get_rndm_elem(Cores, Core),
+  get_pc(process_cost(Task, Core, Time)), !.
+
+
+
+find_heuristically(AllSolutions):-
+  find_all_solutions(1000, [], AllSolutions).
+
+find_all_solutions(0, SolList, SolList).
+
+% create valid solution for the data above
+find_all_solutions(Limit, SolList, ResSolList):-
+  findall(T, task(T), AllTasks),
+  find_one_solution(AllTasks, [], Sol),
+  append(SolList, [Sol], NewSolList),
+  Limit1 is Limit - 1,
+  find_all_solutions(Limit1, NewSolList, ResSolList).
+
 
 % create randomized solution
-create_solution(ScheduleList, TakenCores, TakenTasks, Solution):-
-
-  create_schedule(TakenCores, TakenTasks, NewTakenCores, NewTakenTasks,
-                  schedule(Core, TaskSet)),
-
-  append([schedule(Core, TaskSet)], ScheduleList, NewScheduleList),
-  create_solution(NewScheduleList, NewTakenCores, NewTakenTasks, Solution).
-
-
-% create randomized schedule
-create_schedule(TakenCores, TakenTasks, NewTakenCores, NewTakenTasks,
-                schedule(Core, TaskSet)):-
-
+find_one_solution([Task|Tasks], ScheduleList, Solution):-
   findall(C, core(C), Cores),
-  get_rndm_elem(Cores, TakenCores, Core),
+  get_random_pc(Cores, Task, RndmPc),
+  add_to_schedule_list(RndmPc, ScheduleList, NewScheduleList),
+  find_one_solution(Tasks, NewScheduleList, Solution).
 
-  findall(T, task(T), AllTasks),
-  gen_rndm_list(AllTasks, Core, TakenTasks, TaskSet),
+find_one_solution([], ScheduleList, ScheduleList).
 
-  append(TakenCores, [Core], NewTakenCores),
-  append(TakenTasks, TaskSet, NewTakenTasks).
-
-
-% get list with random elements (not in TakenElems)
-gen_rndm_list(List, Core, TakenElems, RES):-
-  length(List, Len),
-  Len1 is Len - 1,
-  random_between(1, Len1, RndmLen),
-  gen_rndm_list(RndmLen, List, Core, TakenElems, RES), !.
-
-gen_rndm_list(0, _, _, []).
-gen_rndm_list(_, L1, L2, []):- subtract(L1,L2, []), !.
-
-gen_rndm_list(Len, Core, List, TakenElems, RES):-
-  get_rndm_elem(List, Core, TakenElems, RndmTask),
-  Len1 is Len - 1,
-  append(TakenElems, [RndmTask], NewTakenElems),
-  gen_rndm_list(Len1, Core, List, NewTakenElems, SubRes),
-  append([RndmTask], SubRes, RES),
-  !.
-
-% for testing purposes
-%add_to_schedules(NewSol):-
-  %create_solution(Sol),
-  %find_optimal_pc(t2, PC),
-  %% add new task to schedule in possible solution
-  %add_to_schedule_list(PC, Sol, NewSol).
 
 add_to_schedule_list(process_cost(Task, Core, Cost), Sol, NewSol):-
   maplist(add(process_cost(Task, Core, Cost)), Sol, NewSolTmp),
@@ -162,30 +139,31 @@ gen_random(Core, Remainder, Res):-
   ).
 
 % get list with random element (not in TakenElems)
-get_rndm_elem(List, TakenElements, RndmElem):-
-  subtract(List, TakenElements, Remainder),
-  length(Remainder, Len),
+get_rndm_elem(List, RndmElem):-
+  length(List, Len),
   Len1 is Len - 1,
   random_between(0, Len1, RndmIndex),
-  nth0(RndmIndex, Remainder, RndmElem), !.
-
-get_rndm_elem(List, Core, TakenElements, RndmElem):-
-  subtract(List, TakenElements, Remainder),
-  gen_random(Core, Remainder, RndmElem).
+  nth0(RndmIndex, List, RndmElem), !.
 
 find_optimal_pc(process_cost(Task, Core, Time),
                 process_cost(Task, Core, Time)).
 
 % workaround to bypass the cuts in 'batch_small_hetero'
-get_pc(process_cost(_, Core, _)):- Core = c1.
-get_pc(process_cost(_, Core, _)):- Core = c2.
-get_pc(process_cost(_, Core, _)):- Core = c3.
-get_pc(process_cost(_, Core, _)):- Core = c4.
-get_pc(process_cost(_, _, _)).
+get_pc(process_cost(Task, Core, Time)):- Core = c1,
+  process_cost(Task, Core, Time).
+get_pc(process_cost(Task, Core, Time)):- Core = c2,
+  process_cost(Task, Core, Time).
+get_pc(process_cost(Task, Core, Time)):- Core = c3,
+  process_cost(Task, Core, Time).
+get_pc(process_cost(Task, Core, Time)):- Core = c4,
+  process_cost(Task, Core, Time).
+get_pc(process_cost(Task, Core, Time)):-
+  process_cost(Task, Core, Time).
 
 % adds task schedule according the process_cost.
 % Important, here the execution tree gets wider
 find_optimal_pc(Task, ScheduleList, NewSol):-
+  % crucial point, more solutions are possible for the following line
   get_pc(process_cost(Task, Core, Cost)),
   add_to_schedule_list(process_cost(Task, Core, Cost), ScheduleList,
   NewSol).
