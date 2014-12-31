@@ -126,17 +126,6 @@ add(process_cost(Task, Core, _), schedule(Core, Tasks),
 add(process_cost(_, _, _), schedule(Core1, Tasks),
   schedule(Core1, Tasks)).
 
-copy(A, A).
-
-gen_random(Core, Remainder, Res):-
-  random_between(0, Len1, RndmIndex),
-  length(Remainder, Len),
-  Len1 is Len - 1,
-  nth0(RndmIndex, Remainder, Task),
-  (process_cost(Task, Core, _) ->
-    copy(Task, Res);
-    gen_random(Core, Remainder, Res)
-  ).
 
 % get list with random element (not in TakenElems)
 get_rndm_elem(List, RndmElem):-
@@ -164,8 +153,9 @@ get_pc(process_cost(Task, Core, Time)):-
 % Important, here the execution tree gets wider
 find_optimal_pc(Task, ScheduleList, NewSol):-
   % crucial point, more solutions are possible for the following line
-  get_pc(process_cost(Task, Core, Cost)),
-  add_to_schedule_list(process_cost(Task, Core, Cost), ScheduleList,
+  process_cost(Task, Core, Time),
+  %get_pc(process_cost(Task, Core, Time)),
+  add_to_schedule_list(process_cost(Task, Core, Time), ScheduleList,
   NewSol).
 
 find_optimal([], Schedules, Schedules).

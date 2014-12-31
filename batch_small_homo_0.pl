@@ -52,13 +52,9 @@ depends_on(_,_,_) :- fail.
 %In this benchmark every core can execute a given task as fast (i.e. homogeneous system)
 process_cost(t1,C,100) :- core(C).
 process_cost(t2,C,20) :- core(C).
-process_cost(t2,C,10) :- core(C).
 process_cost(t3,C,30) :- core(C).
-process_cost(t3,C,20) :- core(C).
 process_cost(t4,C,40) :- core(C).
-process_cost(t4,C,30) :- core(C).
 process_cost(t5,C,60) :- core(C).
-process_cost(t5,C,50) :- core(C).
 process_cost(t6,C,70) :- core(C).
 process_cost(t7,C,80) :- core(C).
 
