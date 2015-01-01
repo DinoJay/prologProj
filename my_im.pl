@@ -14,16 +14,13 @@ maxList([A],A).
 maxList([A|List],Max):- maxList(List,Max1),
                         (A>=Max1, Max=A; A<Max1, Max=Max1).
 
-% find min process_cost() in list
-minList([X], X) :- !.
-minList([process_cost(T,C,PC),
-                   process_cost(T1,C1, PC1)|Tail],
-                   Res):-
-    ( PC > PC1 ->
-        minList([process_cost(T1,C1,PC1)|Tail], Res)
-    ;
-        minList([process_cost(T,C, PC)|Tail], Res)
-    ).
+list_min([L|Ls], Min) :-
+    list_min(Ls, L, Min).
+
+list_min([], Min, Min).
+list_min([L|Ls], Min0, Min) :-
+    Min1 is min(L, Min0),
+    list_min(Ls, Min1, Min).
 
 
 % valid schedule --> valid core and valid tasks
@@ -149,26 +146,57 @@ get_pc(process_cost(Task, Core, Time)):- Core = c4,
 get_pc(process_cost(Task, Core, Time)):-
   process_cost(Task, Core, Time).
 
+% Testing
+find_one(result(Res, ET)):-
+  findall(T, task(T), Tasks),
+  find_optimal(Tasks, [], result(Res, ET)).
+
 % adds task schedule according the process_cost.
 % Important, here the execution tree gets wider
 find_optimal_pc(Task, ScheduleList, NewSol):-
   % crucial point, more solutions are possible for the following line
+  %process_cost(Task, Core, Time),
   process_cost(Task, Core, Time),
-  %get_pc(process_cost(Task, Core, Time)),
   add_to_schedule_list(process_cost(Task, Core, Time), ScheduleList,
   NewSol).
 
-find_optimal([], Schedules, Schedules).
+find_optimal([], Schedules, result(Schedules, ET)):-
+  execution_time(solution(Schedules), ET).
 
-find_optimal([Task|Tasks], ScheduleList, Res):-
+find_optimal([Task|Tasks], ScheduleList, result(ResSchedule, ET)):-
   % binds only, if stated more solutions possible (?)
   find_optimal_pc(Task, ScheduleList, NewScheduleList),
-  find_optimal(Tasks, NewScheduleList, Res).
-  %isSolution(isSolution(C)).
-  % TODO: get the schedule with the minimum execution time
+  find_optimal(Tasks, NewScheduleList, result(ResSchedule, ET)).
 
 find_optimal(Res):-
   findall(T, task(T), Tasks),
-  find_optimal(Tasks, [], Res).
+  findall(Sol, find_optimal(Tasks, [], Sol), List),
+  minList(List, Res).
+  %find_min_ec(SolList, Res),
+  %execution_time(solution(Res), ET).
 
 
+minList([X], X) :- !.
+
+minList([result(Schedule, ET),
+                   result(Schedule1, ET1)|Tail],
+                   Res):-
+    ( ET > ET1 ->
+        minList([result(Schedule1, ET1)|Tail], Res)
+    ;
+        minList([result(Schedule, ET)|Tail], Res)
+    ).
+
+find_min_ec([Sol|Sols], CurMinSol, MinSol):-
+  execution_time(solution(CurMinSol), CurMin),
+  execution_time(solution(Sol), ET),
+  ( CurMin > ET ->
+      CurMinSol1 = Sol;
+      CurMinSol1 = CurMinSol
+  ),
+  find_min_ec(Sols, CurMinSol1, MinSol).
+
+find_min_ec([Sol|Sols], Min):-
+  find_min_ec(Sols, Sol, Min).
+
+% find min process_cost() in list
