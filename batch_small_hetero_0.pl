@@ -38,7 +38,9 @@ task(t7).
 %%%%%%%%%%%%%%%%%%
 % The execution order dependencies between tasks
 % depends_on(Ta,Tb,Data): before task 'Ta' can be executed,
-% task 'Tb' must have been executed and thereafter 'Data' megabytes of data (result of/produced by 'Tb') must have been moved from the processor that executed 'Tb' to the processor that will execute 'Ta'.
+% task 'Tb' must have been executed and thereafter 'Data' megabytes of
+% data (result of/produced by 'Tb') must have been moved from the
+% processor that executed 'Tb' to the processor that will execute 'Ta'.
 
 %In this benchmark there are no dependencies between tasks.
 depends_on(_,_,_) :- fail.
