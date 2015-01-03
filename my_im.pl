@@ -135,10 +135,14 @@ get_pc(ScheduleList, process_cost(Task, Core, MinTime)):-
   process_cost(Task, Core, MinTime), !.
 
 % required predicate to find the exact solution
-find_optimal(Res):-
+find_optimal(result(Sol, ET)):-
+  %findall(process_cost(A,B,C), process_cost(A,B,C), PCs),
   sort_tasks(PCs),
-  extract_list(PCs, Tasks),
-  find_one(Tasks, [], Res).
+  extract_list(PCs, PCList),
+  length(PCList, Len),
+  print(Len),
+  find_one(PCList, [], result(Sol, ET)),
+  execution_time(solution(Sol), ET1).
 
 find_one([], ScheduleList, result(ScheduleList, ET)):-
   execution_time(solution(ScheduleList), ET), !.
@@ -171,32 +175,35 @@ minETList(ScheduleList, [ProcCost1, ProcCost2|Tail], Res):-
   ).
 
 % gets the maximum processing cost in a list
-maxProcList([X], X) :- !.
-maxProcList([process_cost(T1, C1, Ti1),
+minProcList([X], X) :- !.
+minProcList([process_cost(T1, C1, Ti1),
              process_cost(T2, C2, Ti2)|Tail],
             Res):-
     ( Ti1 > Ti2 ->
-        maxProcList([process_cost(T1, C1, Ti1)|Tail], Res)
+        minProcList([process_cost(T2, C2, Ti2)|Tail], Res)
     ;
-        maxProcList([process_cost(T2, C2, Ti2)|Tail], Res)
+        minProcList([process_cost(T1, C1, Ti1)|Tail], Res)
     ).
 
 % sorts task according to their execution time
 sort_tasks(Res):-
+  findall(process_cost(T,C,Ti), process_cost(T,C,Ti), PCs),
   findall(T, task(T), Tasks),
   maplist(
     find_all(_),
-    Tasks, MaxTasks),
-  predsort(compareTime, MaxTasks, Res).
+  Tasks, MinPCs),
+  predsort(compareTime, MinPCs, Res).
 
-% helper function for maplist above
+%% helper function for maplist above
 find_all(_, T, Res):-
   findall(process_cost(T, C, Ti), process_cost(T, C, Ti), Tasks),
-  maxProcList(Tasks, Res).
+  minProcList(Tasks, Res).
 
 % compare function for predsort above
-compareTime(Delta, process_cost(_, _, T1), process_cost(_, _, T2)):-
-        compare(Delta, T2, T1).
+compareTime(>, process_cost(_, _, T1), process_cost(_, _, T2)):-
+  T1<T2.
+compareTime(<, process_cost(_, _, T1), process_cost(_, _, T2)):-
+  T1>=T2.
 
 extract_list(List, Res):-
   extract_list(List, [], OrderedList),
