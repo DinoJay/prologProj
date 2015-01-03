@@ -40,7 +40,7 @@ markTasks([T|Ts], AllTasks, ReturnTasks):-
 
 markTasks([], NewAllTasks, NewAllTasks).
 
-% is Solution?
+%  TODO: is Solution?
 isSolution(solution(Schedules)):-
   findall(T, task(T), AllTasks),
   isSolution(Schedules, AllTasks).
@@ -71,18 +71,12 @@ tasks_execution_time([T|Ts], Core, TotalET):-
   process_cost(T, Core, TC),
   tasks_execution_time(Ts, Core, ET),
   TotalET is ET+TC.
-
 tasks_execution_time([], _, TotalET):- TotalET is 0.
 
-
-%get_random_pc(Cores, Task, process_cost(Task, Core, Time)):-
-  %get_pc(process_cost(Task, Core, Time)).
-
+% get random processing cost
 get_random_pc(Cores, Task, process_cost(Task, Core, Time)):-
   get_rndm_elem(Cores, Core),
   get_pc(process_cost(Task, Core, Time)), !.
-
-
 
 find_heuristically(AllSolutions):-
   find_all_solutions(1000, [], AllSolutions).
@@ -140,20 +134,8 @@ get_pc(ScheduleList, process_cost(Task, Core, MinTime)):-
   % important, only one solution here.
   process_cost(Task, Core, MinTime), !.
 
-
-%get_pc(ScheduleList, process_cost(Task, Core, MinTime)):-
-  %findall(Time, process_cost(Task, _, Time), Times),
-  %minETList(Task, ScheduleList, Times, MinTime),
-  %process_cost(Task, Core, MinTime),
-  %(Core = c1; Core = c2; Core = c3;Core = c4), !.
-
-get_pc(process_cost(Task, Core, MinTime)):-
-  findall(Time, process_cost(Task, _, Time), Times),
-  process_cost(Task, Core, MinTime),
-  print(process_cost(Task, Core, MinTime)).
-
-% Testing
-find_one(Res):-
+% required predicate to find the exact solution
+find_optimal(Res):-
   sort_tasks(PCs),
   extract_list(PCs, Tasks),
   find_one(Tasks, [], Res).
@@ -169,35 +151,8 @@ find_one([Task|Tasks], ScheduleList, result(ResSchedule, ET)):-
                        NewScheduleList),
   find_one(Tasks, NewScheduleList, result(ResSchedule, ET)).
 
-find_optimal(Res):-
-  findall(T, task(T), Tasks),
-  findall(Sol,
-    (
-      find_one(Tasks, [], Sol)
-    ), List
-  ),
-  minList(List, Res).
-  %find_min_ec(SolList, Res),
-  %execution_time(solution(Res), ET).
-
-
-minList([X], X) :- !.
-minList([result(Schedule, ET),
-                   result(Schedule1, ET1)|Tail],
-                   Res):-
-    ( ET > ET1 ->
-        minList([result(Schedule1, ET1)|Tail], Res)
-    ;
-        minList([result(Schedule, ET)|Tail], Res)
-    ).
-minList([X,Y|Tail],
-                   Res):-
-    ( X > Y ->
-        minList([Y|Tail], Res)
-    ;
-        minList([X|Tail], Res)
-    ).
-
+% checks candidates for a solution. chooses the task and cpu which
+% increases the total execution time the least
 minETList(_, [X], X) :- !.
 minETList(ScheduleList, [ProcCost1, ProcCost2|Tail], Res):-
   add_to_schedule_list(ProcCost1,
@@ -215,6 +170,7 @@ minETList(ScheduleList, [ProcCost1, ProcCost2|Tail], Res):-
       minETList(ScheduleList, [ProcCost1|Tail], Res)
   ).
 
+% gets the maximum processing cost in a list
 maxProcList([X], X) :- !.
 maxProcList([process_cost(T1, C1, Ti1),
              process_cost(T2, C2, Ti2)|Tail],
@@ -225,18 +181,20 @@ maxProcList([process_cost(T1, C1, Ti1),
         maxProcList([process_cost(T2, C2, Ti2)|Tail], Res)
     ).
 
+% sorts task according to their execution time
 sort_tasks(Res):-
   findall(T, task(T), Tasks),
-
   maplist(
     find_all(_),
     Tasks, MaxTasks),
   predsort(compareTime, MaxTasks, Res).
 
+% helper function for maplist above
 find_all(_, T, Res):-
   findall(process_cost(T, C, Ti), process_cost(T, C, Ti), Tasks),
   maxProcList(Tasks, Res).
 
+% compare function for predsort above
 compareTime(Delta, process_cost(_, _, T1), process_cost(_, _, T2)):-
         compare(Delta, T2, T1).
 
