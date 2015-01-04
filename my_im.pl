@@ -76,7 +76,8 @@ tasks_execution_time([], _, TotalET):- TotalET is 0.
 % get random processing cost
 get_random_pc(Cores, Task, process_cost(Task, Core, Time)):-
   get_rndm_elem(Cores, Core),
-  get_pc(process_cost(Task, Core, Time)), !.
+  % TODO
+  process_cost(Task, Core, Time), !.
 
 find_heuristically(AllSolutions):-
   find_all_solutions(1000, [], AllSolutions).
@@ -128,6 +129,7 @@ get_rndm_elem(List, RndmElem):-
   nth0(RndmIndex, List, RndmElem), !.
 
 get_pc(ScheduleList, process_cost(Task, Core, MinTime)):-
+  % TODO: trick the cuts
   findall(process_cost(Task, C, Time),
           process_cost(Task, C, Time), ProcCosts),
   minETList(ScheduleList, ProcCosts, process_cost(Task, Core, MinTime)),
@@ -141,8 +143,7 @@ find_optimal(result(Sol, ET)):-
   extract_list(PCs, PCList),
   length(PCList, Len),
   print(Len),
-  find_one(PCList, [], result(Sol, ET)),
-  execution_time(solution(Sol), ET1).
+  find_one(PCList, [], result(Sol, ET)).
 
 find_one([], ScheduleList, result(ScheduleList, ET)):-
   execution_time(solution(ScheduleList), ET), !.
@@ -158,20 +159,29 @@ find_one([Task|Tasks], ScheduleList, result(ResSchedule, ET)):-
 % checks candidates for a solution. chooses the task and cpu which
 % increases the total execution time the least
 minETList(_, [X], X) :- !.
-minETList(ScheduleList, [ProcCost1, ProcCost2|Tail], Res):-
-  add_to_schedule_list(ProcCost1,
+minETList(ScheduleList, [process_cost(T1, C1, ET1),
+                         process_cost(T2, C2, ET2)|Tail], Res):-
+
+  add_to_schedule_list(process_cost(T1, C1, ET1),
                        ScheduleList,
                        NewScheduleList1),
-  execution_time(solution(NewScheduleList1), ET1),
-  add_to_schedule_list(ProcCost2,
+  execution_time(solution(NewScheduleList1), TotalET1),
+  add_to_schedule_list(process_cost(T2, C2, ET2),
                        ScheduleList,
                        NewScheduleList2),
-  execution_time(solution(NewScheduleList2), ET2),
-  ( ET1 > ET2 ->
-      minETList(ScheduleList, [ProcCost2|Tail], Res)
+  execution_time(solution(NewScheduleList2), TotalET2),
+
+
+  ( (TotalET1 < TotalET2, find_dep(NewScheduleList1, T1)) ->
+      minETList(ScheduleList, [process_cost(T1, C1, ET1)|Tail], Res)
 
   ;
-      minETList(ScheduleList, [ProcCost1|Tail], Res)
+    (find_dep(NewScheduleList2, T2) ->
+        minETList(ScheduleList, [process_cost(T2, C2, ET2)|Tail], Res)
+      ;
+        minETList(ScheduleList, [process_cost(T1, C1, ET1)|Tail], Res)
+    )
+
   ).
 
 % gets the maximum processing cost in a list
@@ -185,14 +195,14 @@ minProcList([process_cost(T1, C1, Ti1),
         minProcList([process_cost(T1, C1, Ti1)|Tail], Res)
     ).
 
-% sorts task according to their execution time
+% preprocessing: sorts task according to their execution time
 sort_tasks(Res):-
-  findall(process_cost(T,C,Ti), process_cost(T,C,Ti), PCs),
   findall(T, task(T), Tasks),
   maplist(
     find_all(_),
   Tasks, MinPCs),
-  predsort(compareTime, MinPCs, Res).
+  predsort(compareDep, MinPCs, TmpList),
+  predsort(compareTime, TmpList, Res).
 
 %% helper function for maplist above
 find_all(_, T, Res):-
@@ -200,10 +210,42 @@ find_all(_, T, Res):-
   minProcList(Tasks, Res).
 
 % compare function for predsort above
-compareTime(>, process_cost(_, _, T1), process_cost(_, _, T2)):-
-  T1<T2.
-compareTime(<, process_cost(_, _, T1), process_cost(_, _, T2)):-
-  T1>=T2.
+
+compareDep(<, process_cost(T1, _, _), process_cost(T2, _, _)):-
+  depends_on(T1, T2, _), !.
+
+compareDep(>, process_cost(T1, _, _), process_cost(T2, _, _)):-
+  depends_on(T2, T1, _), !.
+
+compareDep(<, process_cost(T1, _, _), process_cost(_, _, _)):-
+  depends_on(T1, _, _), !.
+
+compareDep(>, process_cost(_, _, _), process_cost(T2, _, _)):-
+  depends_on(_, T2, _), !.
+
+compareDep(>, process_cost(_, _, ET1), process_cost(_, _, ET2)):-
+  ET1<ET2, !.
+
+compareDep(<, process_cost(_, _, ET1), process_cost(_, _, ET2)):-
+  ET1>=ET2, !.
+
+
+% compare by time with respect to dependencies
+compareTime(>, process_cost(T1, _, ET1), process_cost(T2, _, ET2)):-
+  not(depends_on(T1, T2, _)),
+  not(depends_on(T2, T1, _)),
+  ET1<ET2, !.
+
+compareTime(<, process_cost(T1, _, ET1), process_cost(T2, _, ET2)):-
+  not(depends_on(T1, T2, _)),
+  not(depends_on(T2, T1, _)),
+  ET1>=ET2, !.
+
+compareTime(<, process_cost(T1, _, _), process_cost(T2, _, _)):-
+  depends_on(T1, T2, _).
+
+compareTime(>, process_cost(T1, _, _), process_cost(T2, _, _)):-
+  depends_on(T2, T1, _).
 
 extract_list(List, Res):-
   extract_list(List, [], OrderedList),
@@ -213,3 +255,31 @@ extract_list([process_cost(T, _, _)|PCs], Tmp, Res):-
   append([T], Tmp, Tmp1),
   extract_list(PCs, Tmp1, Res).
 
+% check dependencies
+find_dep(_, DepTask):-
+  not(depends_on(_, DepTask, _)), !.
+
+find_dep(Schedules, DepTask):-
+  depends_on(IndepTask, DepTask, _),
+  get_schedule(Schedules, IndepTask, IndepSchdl),
+  get_schedule(Schedules, DepTask, DepSchdl),
+  tmp_exec_time(IndepSchdl, IndepTask, IndepET),
+  tmp_exec_time(DepSchdl, DepTask, DepET),
+  DepET > IndepET.
+
+
+get_schedule([schedule(C, Ts)|_], Task, schedule(C, Ts)):-
+  member(Task, Ts), !.
+
+get_schedule([_|Schedules], Task, Res):-
+  get_schedule(Schedules, Task, Res).
+
+tmp_exec_time(Schedule, Task, Res):-
+  tmp_exec_time(Schedule, Task, 0, Res).
+
+tmp_exec_time(schedule(_, [T|_]), T, Tmp, Tmp):- !.
+
+tmp_exec_time(schedule(C, [T|Ts]), Task, Tmp, Res):-
+  process_cost(T, C, ET),
+  Tmp1 is Tmp + ET,
+  tmp_exec_time(schedule(C, Ts), Task, Tmp1, Res).

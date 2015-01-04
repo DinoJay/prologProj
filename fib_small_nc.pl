@@ -37,12 +37,12 @@ task(t5).
 %% Dependencies %%
 %%%%%%%%%%%%%%%%%%
 % The execution order dependencies between tasks
-% depends_on(Ta,Tb,Data): before task 'Ta' can be executed, 
+% depends_on(Ta,Tb,Data): before task 'Ta' can be executed,
 % task 'Tb' must have been executed and thereafter 'Data' megabytes of data (result of/produced by 'Tb') must have been moved from the processor that executed 'Tb' to the processor that will execute 'Ta'.
 
 % %In this benchmark tasks are interdependent, but no data is communicated between tasks.
 
-depends_on(t7,t2,0).
+depends_on(t2,t7,0).
 depends_on(t7,t6,0).
 depends_on(t6,t4,0).
 depends_on(t6,t5,0).
@@ -50,7 +50,6 @@ depends_on(t2,t1,0).
 depends_on(t4,t3,0).
 depends_on(t3,t1,0).
 depends_on(t5,t3,0).
-
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%   Processing Costs   %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
