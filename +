@@ -30,29 +30,28 @@ isTaskSet(T, [To|Ts]):- task(T), isTaskSet(To, Ts).
 isTaskSet(T, []):- task(T).
 
 
-%% mark tasks of a schedule in a given tasks set
-%markTasks(schedule(_, Tasks), AllTasks, ReturnTasks):-
-  %markTasks(Tasks, AllTasks, ReturnTasks).
+% mark tasks of a schedule in a given tasks set
+markTasks(schedule(_, Tasks), AllTasks, ReturnTasks):-
+  markTasks(Tasks, AllTasks, ReturnTasks).
 
-%markTasks([T|Ts], AllTasks, ReturnTasks):-
-  %del(T, AllTasks, NewAllTasks),
-  %markTasks(Ts, NewAllTasks, ReturnTasks).
+markTasks([T|Ts], AllTasks, ReturnTasks):-
+  del(T, AllTasks, NewAllTasks),
+  markTasks(Ts, NewAllTasks, ReturnTasks).
 
-%markTasks([], NewAllTasks, NewAllTasks).
+markTasks([], NewAllTasks, NewAllTasks).
 
 %  TODO: is Solution?
 isSolution(solution(Schedules)):-
   findall(T, task(T), AllTasks),
-  length(AllTasks, Len),
-  isSolution(Schedules, 0, Num),
-  Len = Num.
+  isSolution(Schedules, AllTasks).
 
-isSolution([schedule(C, Ts)|Schdls], Counter, Res):-
-  length(Ts, NumTs),
-  Counter1 is Counter + NumTs,
-  isSolution(Schdls, Counter1, Res).
+isSolution([Schdl|Schdls], AllTasks):-
+  isSchedule(Schdl),
+  markTasks(Schdl, AllTasks, NotProcTasks),
+  isSolution(Schdls, NotProcTasks).
 
-isSolution([], Counter, Counter).
+isSolution([], []).
+isSolution([], _):- false.
 
 
 % Calculate execution time for solution
@@ -166,18 +165,29 @@ minETList(ScheduleList, [process_cost(T1, C1, ET1),
   add_to_schedule_list(process_cost(T1, C1, ET1),
                        ScheduleList,
                        NewScheduleList1),
-  exec_time_wrapper(NewScheduleList1, TotalET1),
+  execution_time(solution(NewScheduleList1), TotalET1),
   add_to_schedule_list(process_cost(T2, C2, ET2),
                        ScheduleList,
                        NewScheduleList2),
-  exec_time_wrapper(NewScheduleList2, TotalET2),
+  execution_time(solution(NewScheduleList2), TotalET2),
 
 
-  ( (TotalET1 < TotalET2) ->
+  ( (TotalET1 < TotalET2, true) ->
       minETList(ScheduleList, [process_cost(T1, C1, ET1)|Tail], Res)
 
   ;
-      minETList(ScheduleList, [process_cost(T2, C2, ET2)|Tail], Res)
+    false
+    %(find_dep(NewScheduleList2, T2) ->
+        %minETList(ScheduleList, [process_cost(T2, C2, ET2)|Tail], Res)
+      %;
+      %( (find_dep(NewScheduleList1, T1) ->
+          %minETList(ScheduleList, [process_cost(T1, C1, ET1)|Tail], Res)
+        %;
+          %minETList(ScheduleList, Tail, Res)
+        %)
+      %)
+    %)
+
   ).
 
 % gets the maximum processing cost in a list
@@ -203,17 +213,18 @@ maxETList([process_cost(T1, C1, Ti1),
     ).
 
 % preprocessing: sorts task according to their execution time
-sort_tasks(Tasks, Res):-
+sort_tasks(Res):-
+  depSort(Tasks),
   maplist(
     find_all(_),
   Tasks, PCs),
-  flatten(PCs, FlattedPCs),
-  predsort(compareTime, FlattedPCs, Res).
+  flatten(PCs, Res).
+  %predsort(compareTime, TmpList, Res).
 
 %% helper function for maplist above
 find_all(_, T, Res):-
   findall(process_cost(T, C, Ti), process_cost(T, C, Ti), Res).
-  minProcList(Tasks, Res).
+  %minProcList(Tasks, Res).
 
 % compare function for predsort above
 
@@ -258,29 +269,28 @@ find_all(_, T, Res):-
 
 depSort(Sorted):-
   findall(T, make_edge(T), Ts),
-  (Ts = [] ->
-    fail
-  ;
-    flatten(Ts, Fl),
-    vertices_edges_to_ugraph([], Fl, L),
-    top_sort(L, Sorted), !
-  ).
+  flatten(Ts, Fl),
+  vertices_edges_to_ugraph([], Fl, L),
+  top_sort(L, Sorted).
 
-depSort(Res):-
-  findall(T, task(T), Ts),
-  sort_tasks(Ts, SortedPCs),
-  extract_list(SortedPCs, SortedTs),
-  list_to_set(SortedTs, Res).
-
-
-make_edge([EnablingTask-DepTask]):- depends_on(DepTask, EnablingTask, _).
+make_edge([IndepTask-DepTask]):- depends_on(IndepTask, DepTask, _).
 
 % compare by time with respect to dependencies
 compareTime(>, process_cost(T1, _, ET1), process_cost(T2, _, ET2)):-
-  ET1<ET2.
+  not(depends_on(T1, T2, _)),
+  not(depends_on(T2, T1, _)),
+  ET1<ET2, !.
 
 compareTime(<, process_cost(T1, _, ET1), process_cost(T2, _, ET2)):-
-  ET1>=ET2.
+  not(depends_on(T1, T2, _)),
+  not(depends_on(T2, T1, _)),
+  ET1>=ET2, !.
+
+compareTime(<, process_cost(T1, _, _), process_cost(T2, _, _)):-
+  depends_on(T1, T2, _).
+
+compareTime(>, process_cost(T1, _, _), process_cost(T2, _, _)):-
+  depends_on(T2, T1, _).
 
 extract_list(List, Res):-
   extract_list(List, [], OrderedList),
@@ -290,59 +300,67 @@ extract_list([process_cost(T, _, _)|PCs], Tmp, Res):-
   append([T], Tmp, Tmp1),
   extract_list(PCs, Tmp1, Res).
 
-is_sink(Task, []).
-is_sink(Task, [T|Ts]):-
-  not(depends_on(T, Task, _)),
-  is_sink(Task, Ts).
+%% check dependencies
+%find_dep(_, DepTask):-
+  %not(depends_on(_, DepTask, _)), !.
 
-find_sink(schedule(C, [T|Ts]), T):-
-  is_sink(T, Ts).
-
-find_sink(schedule(C, [T|Ts]), Res):-
-  find_sink(schedule(C, Ts), Res).
-
-exec_time_wrapper(Schedules, Res):-
-  exec_time_wrapper(Schedules, Schedules, ETs),
-  flatten(ETs, FlattedETs),
-  maxList(FlattedETs, Res),
-  !.
-
-exec_time_wrapper(ScheduleList, ScheduleList, Res):-
-  exec_time_wrapper(ScheduleList, ScheduleList, [], Res).
-
-exec_time_wrapper(ScheduleList, [], Tmp, Tmp).
-
-exec_time_wrapper(ScheduleList, [Schedule|Tail], Tmp, Res):-
-  findall(ET, exec_time(ScheduleList, Schedule, ET), ETs),
-  append(Tmp, ETs, Tmp1),
-  exec_time_wrapper(ScheduleList, Tail, Tmp1, Res).
+%find_dep(Schedules, DepTask):-
+  %depends_on(IndepTask, DepTask, _),
+  %get_schedule(Schedules, IndepTask, IndepSchdl),
+  %get_schedule(Schedules, DepTask, DepSchdl),
+  %tmp_exec_time(IndepSchdl, IndepTask, IndepET),
+  %tmp_exec_time(DepSchdl, DepTask, DepET),
+  %DepET > IndepET.
 
 
-exec_time(ScheduleList, schedule(C, Ts), Res):-
-  % Several Solutions
-  find_sink(schedule(C, Ts), Sink),
+%get_schedule([schedule(C, Ts)|_], Task, schedule(C, Ts)):-
+  %member(Task, Ts), !.
+
+%get_schedule([_|Schedules], Task, Res):-
+  %get_schedule(Schedules, Task, Res).
+
+%tmp_exec_time(Schedule, Task, Res):-
+  %tmp_exec_time(Schedule, Task, 0, Res).
+
+%tmp_exec_time(schedule(_, [T|_]), T, Tmp, Tmp):- !.
+
+%tmp_exec_time(schedule(C, [T|Ts]), Task, Tmp, Res):-
+  %process_cost(T, C, ET),
+  %Tmp1 is Tmp + ET,
+  %tmp_exec_time(schedule(C, Ts), Task, Tmp1, Res).
+
+mapPC(C, [[T|Ts]], Res):-
+  mapPC(C, [T|Ts], [], Res).
+
+mapPC(_, [], Tmp, Tmp).
+
+mapPC(C, [T|Ts], Tmp, Res):-
+  process_cost(T, C, ET),
+  append([process_cost(C, T, ET)], Tmp, Tmp1),
+  mapPC(C, Ts, Tmp1, Res).
+
+
+exec_time(ScheduleList, schedule(C, [T|Ts]), Res):-
+  exec_time(ScheduleList, schedule(C, [T|Ts]), [], Res).
+
+exec_time(ScheduleList, schedule(C, []), Tmp, Tmp):-
+  %mapPC(C, Tmp, PCList),
+  %reverse(PCList, Res).
+  true.
+
+exec_time(ScheduleList, schedule(C, [T|Ts]), Tmp, Res):-
   findall(Path,
-    search_df(ScheduleList, schedule(C, Ts), [[Sink]], Path),
-  PathPCs),
-  flatten(PathPCs, FlattedPathPCs),
-  getPCWrapper([schedule(C, Ts)], Ts, SchedulePCs),
-  subtract(SchedulePCs, FlattedPathPCs, DiffPCs),
-  sumPCs(DiffPCs, DiffPCsSum),
-  maxPCs(PathPCs, MaxPCSum),
-  Res is DiffPCsSum + MaxPCSum, !.
+    search_df(ScheduleList, schedule(C, [T|Ts]), [[T]], Path),
+  Paths),
 
+  append([Paths], Tmp, Tmp1),
+  exec_time(ScheduleList, schedule(C, Ts), Tmp1, Res).
 
-search_df(ScheduleList, Schedule, [Current|_], Res):-
+search_df(ScheduleList, schedule(C, Ts), [Current|_], Current):-
   children(Current,Children),
   Children = [],
   %% TODO: map costs to tasks
-  %subtract(Ts, Current, OtherTasks),
-  %getPCWrapper(ScheduleList, OtherTasks, OtherPCs),
-  getPCWrapper(ScheduleList, Current, Res).
-  %getPCWrapper(ScheduleList, OtherTasks, OtherPCs),
-  %sumPCs(PathPCs, SumPathPCs),
-  %sumPCs(OtherPCs, SumOtherPCs),
-  %Res is SumPathPCs + SumOtherPCs.
+  %getPCWrapper(ScheduleList, Ts, Res).
 
 search_df(ScheduleList, Schedule, [Current|Rest], Res):-
   children(Current, Children),
@@ -366,7 +384,7 @@ getPCWrapper(Schedules, [T|Ts], Tmp, Res):-
 getPC([Schedule|Tail], Task, Res):-
   getPC(Schedule, Task, Res).
 
-getPC([_|Tail], Task, Res):-
+getPC([Schedule|Tail], Task, Res):-
   getPC(Tail, Task, Res).
 
 getPC(schedule(C, Ts), Task, process_cost(Task, C, ET)):-
@@ -377,24 +395,3 @@ getPC(schedule(C, [_|Ts]), Task, Res):-
   getPC(schedule(C, Ts), Task, Res).
 
 getPC(schedule(_, []), _, _):- fail.
-
-
-maxPCs([PCs|Tail], Res):-
-    sumPCs(PCs, Max),
-    maxPCs(Tail, Max, Res).
-
-maxPCs([], Max, Max).
-maxPCs([PCs|Tail], Max0, Res):-
-    sumPCs(PCs, Sum),
-    Max1 is max(Sum, Max0),
-    maxPCs(Tail, Max1, Res).
-
-
-sumPCs(PCs, Res):-
-  sumPCs(PCs, 0, Res).
-
-sumPCs([], Tmp, Tmp).
-sumPCs([process_cost(_, _, ET)|PCs], Tmp, Res):-
-  Tmp1 is Tmp + ET,
-  sumPCs(PCs, Tmp1, Res).
-

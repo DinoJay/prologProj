@@ -42,7 +42,7 @@ task(t5).
 
 % %In this benchmark tasks are interdependent, but no data is communicated between tasks.
 
-depends_on(t2,t7,0).
+depends_on(t7,t2,0).
 depends_on(t7,t6,0).
 depends_on(t6,t4,0).
 depends_on(t6,t5,0).
@@ -50,6 +50,7 @@ depends_on(t2,t1,0).
 depends_on(t4,t3,0).
 depends_on(t3,t1,0).
 depends_on(t5,t3,0).
+
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %%%   Processing Costs   %%%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
