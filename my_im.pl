@@ -144,7 +144,7 @@ find_optimal(result(Sol, ET)):-
   %extract_list(PCs, PCList),
   %length(PCList, Len),
   %print(Len),
-  find_one(TaskList, [], result(Sol, ET)).
+  find_one(TaskList, [], result(Sol, ET)), !.
 
 find_one([], ScheduleList, result(ScheduleList, ET)):-
   execution_time(solution(ScheduleList), ET), !.
@@ -292,11 +292,12 @@ extract_list([process_cost(T, _, _)|PCs], Tmp, Res):-
 
 is_sink(Task, []).
 is_sink(Task, [T|Ts]):-
-  not(depends_on(T, Task, _)),
+  findall(depends_on(T, Task, _), depends_on(T, Task, _), Tasks),
+  Tasks = [],
   is_sink(Task, Ts).
 
 find_sink(schedule(C, [T|Ts]), T):-
-  is_sink(T, Ts).
+  is_sink(T, Ts), !.
 
 find_sink(schedule(C, [T|Ts]), Res):-
   find_sink(schedule(C, Ts), Res).
@@ -312,9 +313,15 @@ exec_time_wrapper(ScheduleList, ScheduleList, Res):-
 
 exec_time_wrapper(ScheduleList, [], Tmp, Tmp).
 
-exec_time_wrapper(ScheduleList, [Schedule|Tail], Tmp, Res):-
-  findall(ET, exec_time(ScheduleList, Schedule, ET), ETs),
-  append(Tmp, ETs, Tmp1),
+exec_time_wrapper(ScheduleList, [schedule(C, Ts)|Tail], Tmp, Res):-
+  findall(ET, exec_time(ScheduleList, schedule(C, Ts), ET), PathPCs),
+  % TODO
+  maxPCs(PathPCs, tuple(MaxPCs, MaxET)),
+  getPCWrapper([schedule(C, Ts)], Ts, SchedulePCs),
+  subtract(SchedulePCs, MaxPCs, DiffPCs),
+  sumPCs(DiffPCs, DiffPCsSum),
+  Max is DiffPCsSum + MaxET,
+  append(Tmp, [Max], Tmp1),
   exec_time_wrapper(ScheduleList, Tail, Tmp1, Res).
 
 
@@ -323,13 +330,7 @@ exec_time(ScheduleList, schedule(C, Ts), Res):-
   find_sink(schedule(C, Ts), Sink),
   findall(Path,
     search_df(ScheduleList, schedule(C, Ts), [[Sink]], Path),
-  PathPCs),
-  flatten(PathPCs, FlattedPathPCs),
-  getPCWrapper([schedule(C, Ts)], Ts, SchedulePCs),
-  subtract(SchedulePCs, FlattedPathPCs, DiffPCs),
-  sumPCs(DiffPCs, DiffPCsSum),
-  maxPCs(PathPCs, MaxPCSum),
-  Res is DiffPCsSum + MaxPCSum, !.
+  Res).
 
 
 search_df(ScheduleList, Schedule, [Current|_], Res):-
@@ -379,15 +380,18 @@ getPC(schedule(C, [_|Ts]), Task, Res):-
 getPC(schedule(_, []), _, _):- fail.
 
 
-maxPCs([PCs|Tail], Res):-
+maxPCs([[PCs|Tail]], Res):-
     sumPCs(PCs, Max),
-    maxPCs(Tail, Max, Res).
+    maxPCs(Tail, tuple(PCs, Max), Res).
 
-maxPCs([], Max, Max).
-maxPCs([PCs|Tail], Max0, Res):-
-    sumPCs(PCs, Sum),
-    Max1 is max(Sum, Max0),
-    maxPCs(Tail, Max1, Res).
+maxPCs([], MaxTuple, MaxTuple).
+maxPCs([PCs|Tail], tuple(PCs0, Max0), Res):-
+  sumPCs(PCs, Sum),
+  (Sum > Max0 ->
+    maxPCs(Tail, tuple(PCs, Sum), Res)
+  ;
+    maxPCs(Tail, tuple(PCs0, Max0), Res)
+  ).
 
 
 sumPCs(PCs, Res):-
