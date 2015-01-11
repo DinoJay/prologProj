@@ -158,7 +158,7 @@ find_one([Task|Tasks], ScheduleList, result(ResSchedule, ET)):-
     get_pc(process_cost(Task, C, Time)),
   ProcCosts),
   minETList(ScheduleList, ProcCosts, process_cost(Task, Core, MinTime)),
-  add_to_schedule_list(process_cost(Task, Core, Time),
+  add_to_schedule_list(process_cost(Task, Core, MinTime),
                        ScheduleList,
                        NewScheduleList),
   find_one(Tasks, NewScheduleList, result(ResSchedule, ET)).
@@ -269,11 +269,12 @@ compareTime(<, process_cost(T1, _, ET1), process_cost(T2, _, ET2)):-
 
 execution_time(ScheduleList, Res):-
   create_graph(ScheduleList, Graph),
-  findall(Path,
-    search_df(Graph, [[process_cost(start, null, null)]], Path),
-    Paths),
-  delete_node(process_cost(start, null, null), Paths, Paths1),
-  maxPCs(Paths1, tuple(_, Res)), !.
+  %findall(Path,
+    %search_df(Graph, [[process_cost(start, null, null)]], Path),
+    %Paths),
+  %delete_node(process_cost(start, null, null), Paths, Paths1),
+  %maxPCs(Paths1, tuple(_, Res)), !.
+  search_df_wrapper(Graph, ScheduleList, [], Res), !.
 
 % depth first search
 search_df(Graph, [Current|_], Path):-
@@ -386,14 +387,15 @@ create_graph(ScheduleList, Res):-
 create_graph(_, [], Edges, Graph):-
   vertices_edges_to_ugraph([], Edges, Graph).
 create_graph(ScheduleList, [schedule(C, [T|Ts])|Tail], Edges0, Res):-
-  process_cost(T, C, ET),
-  append(
-    [process_cost(start, null, null)-process_cost(T, C, ET)],
-  Edges0, Edges1),
+  %process_cost(T, C, ET),
+  %append(
+    %[process_cost(start, null, null)-process_cost(T, C, ET)],
+  %Edges0, Edges1),
+
+  %append(Edges1, InnerEdges, Edges2),
 
   make_inner_edges(ScheduleList, schedule(C, [T|Ts]), InnerEdges),
-
-  append(Edges1, InnerEdges, Edges2),
+  append(Edges0, InnerEdges, Edges2),
   create_graph(ScheduleList, Tail, Edges2, Res).
 
 isNeighbour(Graph, Node, Neighbour):-
@@ -424,3 +426,20 @@ find_optimal_pc(Task, ScheduleList, NewSol):-
   process_cost(Task, Core, Time),
   add_to_schedule_list(process_cost(Task, Core, Time), ScheduleList,
   NewSol).
+
+search_df_wrapper(Graph, [], Tmp1, Res):- maxPCs(Tmp1, tuple(_, Res)).
+
+search_df_wrapper(Graph, [schedule(C, [T|_])|Tail], Tmp, Res):-
+    isNeighbour(Graph, Predecessor, process_cost(T, C, ET)),
+    search_df_wrapper(Graph, Tail, Tmp, Res).
+
+search_df_wrapper(Graph, [schedule(C, [T|_])|Tail], Tmp, Res):-
+  process_cost(T, C, ET),
+  findall(Path,
+    search_df(Graph, [[process_cost(T, C, ET)]], Path),
+    Paths),
+    maxPCs(Paths, tuple(MaxPath, _)),
+    append([MaxPath], Tmp, Tmp1),
+    search_df_wrapper(Graph, Tail, Tmp1, Res).
+
+
