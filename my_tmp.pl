@@ -91,8 +91,8 @@ find_heuristically(Limit, SolList, ResSolList):-
 
 % create randomized solution
 find_one_solution([Task|Tasks], ScheduleList, Solution):-
-  findall(C, core(C), Cores),
-  get_random_pc(Cores, Task, RndmPc),
+  process_cost(Task, C, ET),
+
   add_to_schedule_list(RndmPc, ScheduleList, NewScheduleList),
   find_one_solution(Tasks, NewScheduleList, Solution).
 
@@ -146,7 +146,7 @@ get_pc(process_cost(Task, Core, Time)):-
 
 % required predicate to find the exact solution
 find_optimal(result(Sol, ET)):-
-  depSort(TaskList),
+  dep_sort(TaskList),
   find_one(TaskList, [], result(Sol, ET)), !.
 
 find_one([], ScheduleList, result(ScheduleList, ET)):-
@@ -228,7 +228,7 @@ getPCs([path(Ts)|Tail], Tmp, Res):-
   getPCs(Tail, Tmp1, Res).
 
 % sorting based on dependencies, i.e. topological sorting
-depSort(Sorted):-
+dep_sort(Sorted):-
   findall(T, make_edge(T), Ts),
   (Ts = [] ->
     fail
@@ -238,7 +238,7 @@ depSort(Sorted):-
     top_sort(L, Sorted), !
   ).
 
-depSort(Res):-
+dep_sort(Res):-
   findall(T, task(T), Ts),
   sort_tasks(Ts, SortedPCs),
   extract_list(SortedPCs, SortedTs),
@@ -269,11 +269,6 @@ compareTime(<, process_cost(T1, _, ET1), process_cost(T2, _, ET2)):-
 
 execution_time(ScheduleList, Res):-
   create_graph(ScheduleList, Graph),
-  %findall(Path,
-    %search_df(Graph, [[process_cost(start, null, null)]], Path),
-    %Paths),
-  %delete_node(process_cost(start, null, null), Paths, Paths1),
-  %maxPCs(Paths1, tuple(_, Res)), !.
   search_df_wrapper(Graph, ScheduleList, [], Res), !.
 
 % depth first search
@@ -339,8 +334,7 @@ sumPCs(PCs, Res):-
 
 sumPCs([], Tmp, Tmp).
 
-sumPCs([process_cost(T0, C0, ET0),
-        process_cost(T1, C1, ET1)|PCs], Tmp, Res):-
+sumPCs([process_cost(T0, C0, ET0), process_cost(T1, C1, ET1)|PCs], Tmp, Res):-
   % Note that sending 'X' megabytes of data, over a channel,
   % takes Latency + X/Bandwidth ms.
   (C0\=C1, (channel(C0, C1, Lat, Bwidth), depends_on(T1, T0, Data)) ->
@@ -353,32 +347,32 @@ sumPCs([process_cost(T0, C0, ET0),
 
 sumPCs([process_cost(T1, C1, ET1)|_], Tmp, Res):- Res is Tmp + ET1.
 
-make_inner_edges(ScheduleList, Schedule, Res):-
-  make_inner_edges(ScheduleList, Schedule, [], Res).
+make_io_edges(ScheduleList, Schedule, Res):-
+  make_io_edges(ScheduleList, Schedule, [], Res).
 
-make_inner_edges(_, schedule(C, []), Edges, EdgesSet):-
+make_io_edges(_, schedule(C, []), Edges, EdgesSet):-
   list_to_set(Edges, EdgesSet).
-make_inner_edges(Schedules, schedule(C, [T]), Edges0, Edges):-
+make_io_edges(Schedules, schedule(C, [T]), Edges0, Edges):-
   process_cost(T, C, ET),
-  %TODO:check deps
   findall(PC-process_cost(T, C, ET),
     make_edge(Schedules, [PC-process_cost(T, C, ET)]),
   DepEdges),
   append(Edges0, DepEdges, Edges1),
-  make_inner_edges(Schedules, schedule(C, []), Edges1, Edges).
+  make_io_edges(Schedules, schedule(C, []), Edges1, Edges).
 
 
-make_inner_edges(Schedules, schedule(C, [T1,T2|Ts]), Edges0, Res):-
+make_io_edges(Schedules, schedule(C, [T1,T2|Ts]), Edges0, Res):-
   process_cost(T1, C, ET1),
   process_cost(T2, C, ET2),
   append(
     [process_cost(T1, C, ET1)-process_cost(T2, C, ET2)],
   Edges0, Edges1),
+
   findall(PC-process_cost(T2, C, ET2),
     make_edge(Schedules, [PC-process_cost(T2, C, ET2)]),
   OtherEdges),
   append( OtherEdges, Edges1, Edges2),
-  make_inner_edges(Schedules, schedule(C, [T2|Ts]), Edges2, Res).
+  make_io_edges(Schedules, schedule(C, [T2|Ts]), Edges2, Res).
 
 
 create_graph(ScheduleList, Res):-
@@ -394,7 +388,7 @@ create_graph(ScheduleList, [schedule(C, [T|Ts])|Tail], Edges0, Res):-
 
   %append(Edges1, InnerEdges, Edges2),
 
-  make_inner_edges(ScheduleList, schedule(C, [T|Ts]), InnerEdges),
+  make_io_edges(ScheduleList, schedule(C, [T|Ts]), InnerEdges),
   append(Edges0, InnerEdges, Edges2),
   create_graph(ScheduleList, Tail, Edges2, Res).
 
@@ -404,7 +398,7 @@ isNeighbour(Graph, Node, Neighbour):-
 
 
 find_my_optimal(MinET):-
-  depSort(TaskList),
+  dep_sort(TaskList),
   findall(Sol,
     find_my_optimal(TaskList, [], Sol),
   AllSols),
@@ -441,5 +435,4 @@ search_df_wrapper(Graph, [schedule(C, [T|_])|Tail], Tmp, Res):-
     maxPCs(Paths, tuple(MaxPath, _)),
     append([MaxPath], Tmp, Tmp1),
     search_df_wrapper(Graph, Tail, Tmp1, Res).
-
 
