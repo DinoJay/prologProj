@@ -178,7 +178,6 @@ find_sol([], ScheduleList, ScheduleList).
 % add process_cost(T, C, ET) to the corresponding schedule
 add_pc_to_schedule(process_cost(Task, Core, Cost), Sol, NewSol):-
   maplist(add(process_cost(Task, Core, Cost)), Sol, NewSolTmp),
-
   (Sol = NewSolTmp ->
     append(NewSolTmp, [schedule(Core, [Task])], NewSol);
     append(NewSolTmp, [], NewSol)
@@ -204,14 +203,16 @@ dep_sort_PCs(Sorted):-
 
 dep_sort_tasks(Res):-
   dep_sort_PCs(SortedPCs),
+  % TODO
   extract_list(SortedPCs, SortedTs),
   list_to_set(SortedTs, Res).
-
 
 extract_list(List, Res):-
   extract_list(List, [], OrderedList),
   reverse(OrderedList, Res).
+
 extract_list([], Tmp, Tmp).
+
 extract_list([process_cost(T, _, _)|PCs], Tmp, Res):-
   append([T], Tmp, Tmp1),
   extract_list(PCs, Tmp1, Res).
@@ -225,11 +226,9 @@ compareTime(<, process_cost(_, _, ET1), process_cost(_, _, ET2)):-
 find_all_dep_edges(Res):-
   findall(Edge, make_dep_edge(Edge), Res).
 
-
 find_all_dep_pcs(T, Res):-
   process_cost(T, C, ET),
   findall(PC, make_pc_dep_edge([process_cost(T, C, ET)-PC]), Res), !.
-
 
 make_dep_edge([EnablingTask-DepTask]):- depends_on(DepTask, EnablingTask, _).
 
@@ -396,9 +395,8 @@ make_io_pc_edges(Schedules, schedule(C, [T|Ts]), Edges0, Res):-
   Edges),
   Edges \= [],
   append( Edges, Edges0, Edges1),
-  make_io_pc_edges(Schedules, schedule(C, Ts), Edges1, Res).
+  make_io_pc_edges(Schedules, schedule(C, Ts), Edges1, Res), !.
 
-make_io_pc_edges(_, schedule(_, Ts), [], []):- length(Ts, 1).
 
 make_io_pc_edges(Schedules, schedule(C, [T1,T2|Ts]), Edges0, Res):-
   process_cost(T1, C, ET1),
@@ -407,8 +405,10 @@ make_io_pc_edges(Schedules, schedule(C, [T1,T2|Ts]), Edges0, Res):-
     [process_cost(T1, C, ET1)-process_cost(T2, C, ET2)],
   Edges0, Edges),
   append( Edges0, Edges, Edges1),
-  make_io_pc_edges(Schedules, schedule(C, [T2]), Edges1, Res).
+  make_io_pc_edges(Schedules, schedule(C, [T2|Ts]), Edges1, Res).
 
+
+make_io_pc_edges(_, schedule(_, [_]), Edges, Edges).
 
 create_graph(ScheduleList, Res):-
   create_graph(ScheduleList, ScheduleList, [], Res).
