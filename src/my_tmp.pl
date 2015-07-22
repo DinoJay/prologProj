@@ -22,37 +22,52 @@ sarkar(Res):-
 
 sarkar([], _, _, ScheduleList, ScheduleList).
 
-sarkar(Graph, LenCores, Counter, ScheduleList, Res):-
-  CoreNumberTmp is Counter mod LenCores, CoreNumber is CoreNumberTmp + 1,
-  string_concat('c', CoreNumber, CoreStr), atom_string(Core, CoreStr),
-  NewCounter is Counter + 1,
 
+sarkar(Graph, LenCores, Counter, ScheduleList, Res):-
+  get_core(Counter, LenCores, Core),
+  NewCounter is Counter + 1,
   critical_path(Graph, MaxPath),
   add_path_to_schedule(MaxPath, Core, ScheduleList, NewScheduleList),
-
   del_vertices(Graph, MaxPath, NewGraph),
   sarkar(NewGraph, LenCores, NewCounter, NewScheduleList, Res).
 
+get_core(Counter, LenCores, Core):-
+  CoreNumberTmp is Counter mod LenCores, CoreNumber is CoreNumberTmp + 1,
+  string_concat('c', CoreNumber, CoreStr), atom_string(Core, CoreStr).
 
 find_batch_sol(Res):-
   findall(T, task(T), Tasks),
   et_sort(Tasks, SortedTasks),
-  add_pc_list_to_schedule(SortedTasks, Res).
+  findall(C, core(C), Cores),
+  length(Cores, LenCores),
+  core(StartCore),
+  nth0(Index, Cores, StartCore),
+  add_pc_list_to_schedule(SortedTasks, [], LenCores, Index, Res).
 
-add_pc_list_to_schedule(SortedTasks, Res):-
-  add_pc_list_to_schedule(SortedTasks, [], Res).
+add_pc_list_to_schedule([], ScheduleList, _, _, ScheduleList).
 
-add_pc_list_to_schedule([], ScheduleList, ScheduleList).
-
-add_pc_list_to_schedule([T|Ts], ScheduleList, Res):-
-  findall(process_cost(T, C, Time),
-    get_pc(process_cost(T, C, Time)),
+add_pc_list_to_schedule([T|Ts], ScheduleList, LenCores, Counter, Res):-
+  % get_core(Counter, LenCores, Core),
+  % NewCounter is Counter + 1,
+  % process_cost(T, Core, MinTime),
+  %
+  % add_pc_to_schedule(process_cost(T, Core, MinTime), ScheduleList,
+  %                    NewScheduleList),
+  NewCounter is Counter,
+  findall(C, core(C), Cores),
+  maplist(
+    get_pc(T),
+    Cores,
   PCs),
+  print(T),
   % add_pc_to_schedule(process_cost(T, C, ET), ScheduleList, NewScheduleList),
   minETList(ScheduleList, PCs, process_cost(Task, Core, MinTime)),
   add_pc_to_schedule(process_cost(Task, Core, MinTime), ScheduleList,
                      NewScheduleList),
-  add_pc_list_to_schedule(Ts, NewScheduleList, Res).
+
+  add_pc_list_to_schedule(Ts, NewScheduleList, LenCores, NewCounter, Res).
+
+get_pc( T, C, process_cost(T, C, ET)):- process_cost(T, C, ET).
 
 % checks candidates for a solution. chooses the task and cpu which
 % increases the total execution time the least
@@ -73,31 +88,22 @@ minETList(ScheduleList, [process_cost(T1, C1, ET1),
 
   ;
       minETList(ScheduleList, [process_cost(T2, C2, ET2)|Tail], Res)
-  ).
-
-get_pc(process_cost(Task, Core, Time)):- Core = c1,
-  process_cost(Task, Core, Time).
-get_pc(process_cost(Task, Core, Time)):- Core = c2,
-  process_cost(Task, Core, Time).
-get_pc(process_cost(Task, Core, Time)):- Core = c3,
-  process_cost(Task, Core, Time).
-get_pc(process_cost(Task, Core, Time)):- Core = c4,
-  process_cost(Task, Core, Time).
-get_pc(process_cost(Task, Core, Time)):-
-  process_cost(Task, Core, Time).
+  ), !.
 
 % preprocessing: sorts task according to their execution time
 et_sort(Tasks, Res):-
   maplist(
-    get_min_pc(_),
+    get_min_pc,
   Tasks, PCs),
   flatten(PCs, FlattedPCs),
   predsort(compareTime, FlattedPCs, SortedPCs),
   maplist(extractTask, SortedPCs, Res).
 
 extractTask(process_cost(T, _, _), T).
-%% helper function for maplist above
-get_min_pc(_, T, Res):-
+extractET(C, T, ET):- process_cost(T, C, ET).
+
+% helper function for maplist above
+get_min_pc(T, Res):-
   findall(process_cost(T, C, Ti), process_cost(T, C, Ti), PCs),
   minProcList(PCs, Res).
 
@@ -270,10 +276,25 @@ get_edges([T1, T2|Ts], Tmp, Res):-
   get_edges([T2|Ts], NewTmp, Res).
 
 
-execution_time(ScheduleList, Res):-
-  create_graph(ScheduleList, Graph),
-  max_pc_path(Graph, ScheduleList, [], tuple(_, Res)), !.
+% execution_time(ScheduleList, Res):-
+%   create_graph(ScheduleList, Graph),
+%   max_pc_path(Graph, ScheduleList, [], tuple(_, Res)), !.
 
+
+execution_time(ScheduleList, Res):-
+  execution_time(ScheduleList, 0, Res).
+
+execution_time([schedule(C, Ts)|Tail], Max, Res):-
+  maplist(extractET(C), Ts, ETs),
+  sumlist(ETs, TotalET),
+  ( (TotalET > Max) ->
+      NewMax is TotalET
+  ;
+      NewMax is Max
+  ),
+  execution_time(Tail, NewMax, Res).
+
+execution_time([], Max, Max).
 
 % depth first search
 dfs_search(_, [Current|_], Target, Path):-
