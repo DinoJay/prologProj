@@ -7,29 +7,36 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 
-sarkar(Res):-
+
+
+find_heuristically(Res):-
+  find_dag(Res), !.
+
+find_heuristically(Res):-
+  find_batch_sol(Res), !.
+
+find_dag(Res):-
   findall(Edge,
     make_dep_edge(Edge),
   EdgesArray),
+  EdgesArray \= [],
   flatten(EdgesArray, Edges),
   vertices_edges_to_ugraph([], Edges, Graph),
-
   findall(C, core(C), Cores),
   length(Cores, LenCores),
 
-  sarkar(Graph, LenCores, 0, [], Res).
+  find_dag(Graph, LenCores, 0, [], Res).
 
 
-sarkar([], _, _, ScheduleList, ScheduleList).
+find_dag([], _, _, ScheduleList, ScheduleList).
 
-
-sarkar(Graph, LenCores, Counter, ScheduleList, Res):-
+find_dag(Graph, LenCores, Counter, ScheduleList, Res):-
   get_core(Counter, LenCores, Core),
   NewCounter is Counter + 1,
   critical_path(Graph, MaxPath),
   add_path_to_schedule(MaxPath, Core, ScheduleList, NewScheduleList),
   del_vertices(Graph, MaxPath, NewGraph),
-  sarkar(NewGraph, LenCores, NewCounter, NewScheduleList, Res).
+  find_dag(NewGraph, LenCores, NewCounter, NewScheduleList, Res).
 
 get_core(Counter, LenCores, Core):-
   CoreNumberTmp is Counter mod LenCores, CoreNumber is CoreNumberTmp + 1,
@@ -38,34 +45,21 @@ get_core(Counter, LenCores, Core):-
 find_batch_sol(Res):-
   findall(T, task(T), Tasks),
   et_sort(Tasks, SortedTasks),
-  findall(C, core(C), Cores),
-  length(Cores, LenCores),
-  core(StartCore),
-  nth0(Index, Cores, StartCore),
-  add_pc_list_to_schedule(SortedTasks, [], LenCores, Index, Res).
+  add_pc_list_to_schedule(SortedTasks, [], Res).
 
-add_pc_list_to_schedule([], ScheduleList, _, _, ScheduleList).
+add_pc_list_to_schedule([], ScheduleList, ScheduleList).
 
-add_pc_list_to_schedule([T|Ts], ScheduleList, LenCores, Counter, Res):-
-  % get_core(Counter, LenCores, Core),
-  % NewCounter is Counter + 1,
-  % process_cost(T, Core, MinTime),
-  %
-  % add_pc_to_schedule(process_cost(T, Core, MinTime), ScheduleList,
-  %                    NewScheduleList),
-  NewCounter is Counter,
+add_pc_list_to_schedule([T|Ts], ScheduleList, Res):-
   findall(C, core(C), Cores),
   maplist(
     get_pc(T),
     Cores,
   PCs),
-  print(T),
-  % add_pc_to_schedule(process_cost(T, C, ET), ScheduleList, NewScheduleList),
   minETList(ScheduleList, PCs, process_cost(Task, Core, MinTime)),
   add_pc_to_schedule(process_cost(Task, Core, MinTime), ScheduleList,
                      NewScheduleList),
 
-  add_pc_list_to_schedule(Ts, NewScheduleList, LenCores, NewCounter, Res).
+  add_pc_list_to_schedule(Ts, NewScheduleList, Res).
 
 get_pc( T, C, process_cost(T, C, ET)):- process_cost(T, C, ET).
 
@@ -276,10 +270,10 @@ get_edges([T1, T2|Ts], Tmp, Res):-
   get_edges([T2|Ts], NewTmp, Res).
 
 
-% execution_time(ScheduleList, Res):-
-%   create_graph(ScheduleList, Graph),
-%   max_pc_path(Graph, ScheduleList, [], tuple(_, Res)), !.
-
+execution_time(ScheduleList, Res):-
+  create_graph(ScheduleList, Graph),
+  Graph \= [],
+  max_pc_path(Graph, ScheduleList, [], tuple(_, Res)), !.
 
 execution_time(ScheduleList, Res):-
   execution_time(ScheduleList, 0, Res).
@@ -307,18 +301,16 @@ dfs_search(Graph, [Current|Rest], Target, Res):-
   append(Children, Rest, NewAgenda),
   dfs_search(Graph, NewAgenda, Target, Res).
 
-
-traverse(Graph, [Current|Rest], Res):-
-  children(Graph, Current, Children),
-  append(Children, Rest, NewAgenda),
-  traverse(Graph, NewAgenda, Res).
-
 % traverse graph to leaves
 traverse(Graph, [Current|_], Path):-
   children(Graph, Current, Children),
   Children = [],
-  reverse(Current, Path).
+  reverse(Current, Path), !.
 
+traverse(Graph, [Current|Rest], Res):-
+  children(Graph, Current, Children),
+  append(Children, Rest, NewAgenda),
+  traverse(Graph, NewAgenda, Res), !.
 
 
 children(Graph, [Node|RestOfPath], Children):-
@@ -414,19 +406,40 @@ make_io_pc_edges(Schedules, schedule(C, [T|Ts]), Edges0, Res):-
   findall(PC-process_cost(T, C, ET),
     make_pc_dep_edge(Schedules, [PC-process_cost(T, C, ET)]),
   Edges),
-  Edges \= [],
   append( Edges, Edges0, Edges1),
   make_io_pc_edges(Schedules, schedule(C, Ts), Edges1, Res), !.
 
 
-make_io_pc_edges(Schedules, schedule(C, [T1,T2|Ts]), Edges0, Res):-
-  process_cost(T1, C, ET1),
-  process_cost(T2, C, ET2),
-  append(
-    [process_cost(T1, C, ET1)-process_cost(T2, C, ET2)],
-  Edges0, Edges),
-  append( Edges0, Edges, Edges1),
-  make_io_pc_edges(Schedules, schedule(C, [T2|Ts]), Edges1, Res).
+% make_io_pc_edges(Schedules, schedule(C, [T1,T2|Ts]), Edges0, Res):-
+%   process_cost(T1, C, ET1),
+%   process_cost(T2, C, ET2),
+%   append(
+%     [process_cost(T1, C, ET1)-process_cost(T2, C, ET2)],
+%   Edges0, Edges),
+%   append( Edges0, Edges, Edges1),
+%   make_io_pc_edges(Schedules, schedule(C, [T2|Ts]), Edges1, Res).
+
+% make_io_pc_edges(Schedules, schedule(C, [T]), Edges0, Edges):-
+%   process_cost(T, C, ET),
+%   %TODO:check deps
+%   findall(PC-process_cost(T, C, ET),
+%     make_pc_dep_edge(Schedules, [PC-process_cost(T, C, ET)]),
+%   DepEdges),
+%   append(Edges0, DepEdges, Edges1),
+%   make_io_pc_edges(Schedules, schedule(C, []), Edges1, Edges).
+%
+%
+% make_io_pc_edges(Schedules, schedule(C, [T1,T2|Ts]), Edges0, Res):-
+%   process_cost(T1, C, ET1),
+%   process_cost(T2, C, ET2),
+%   append(
+%     [process_cost(T1, C, ET1)-process_cost(T2, C, ET2)],
+%   Edges0, Edges1),
+%   findall(PC-process_cost(T2, C, ET2),
+%     make_pc_dep_edge(Schedules, [PC-process_cost(T2, C, ET2)]),
+%   OtherEdges),
+%   append( OtherEdges, Edges1, Edges2),
+%   make_io_pc_edges(Schedules, schedule(C, [T2|Ts]), Edges2, Res).
 
 
 make_io_pc_edges(_, schedule(_, [_]), Edges, Edges).
