@@ -282,7 +282,7 @@ task(t251).
 %% Dependencies %%
 %%%%%%%%%%%%%%%%%%
 % The execution order dependencies between tasks
-% depends_on(Ta,Tb,Data): before task 'Ta' can be executed, 
+% depends_on(Ta,Tb,Data): before task 'Ta' can be executed,
 % task 'Tb' must have been executed and thereafter 'Data' Mmegabytes of data (result of/produced by 'Tb') must have been moved from the processor that executed 'Tb' to the processor that will execute 'Ta'.
 
 % In this benchmark tasks are interdependent, and data (matrix-chunk) is communicated between tasks.
