@@ -16,7 +16,7 @@ find_optimal(Res):-
     et_sort(EtSortedTs),
     findall(tuple(Sol, ET), find_sol_wrapper(EtSortedTs, Sol, ET), SolList)
   ),
-  min_ET(SolList, Res), !.
+  min_ET(SolList, tuple(Res, _)), !.
 
 min_ET([Min],Min).
 
@@ -49,14 +49,14 @@ find_heuristically(Res):-
 
 find_dag_sol(Res):- find_dag_sol(0, [], Res).
 
-find_dag_sol(_, [First|Rest], ScheduleList):-
-  flatten([First|Rest], Visited),
+find_dag_sol(_, List, ScheduleList):-
+  flatten(List, Visited),
   list_to_set(Visited, Tasks),
   findall(T, task(T), AllTasks),
   length(Tasks, L0), length(AllTasks, L1),
   L0 = L1,
-  predsort(compareLast, Rest, SList),
-  assign_cpu([First|SList], ScheduleList).
+  predsort(compareLen, List, SList),
+  assign_cpu(SList, ScheduleList).
 
 find_dag_sol(Counter, Paths, Res):-
   flatten(Paths, Visited),
@@ -74,32 +74,33 @@ assign_cpu(Ps, Res):-
 assign_cpu([], _, ScheduleList, ScheduleList).
 
 assign_cpu([P|Ps], Counter, ScheduleList, Res):-
-  get_valid_core_number(ScheduleList, P, Core),
-  % get_core(Counter, Core),
+  % get_valid_core_number(ScheduleList, P, Core),
+  get_mod_core(Counter, Core),
   NewCounter is Counter + 1,
   create_graph(ScheduleList, G),
   top_sort(G, _),
   add_path_to_schedule(P, Core, ScheduleList, NewScheduleList),
   assign_cpu(Ps, NewCounter, NewScheduleList, Res).
 
-
-% assign_cpu([P|Ps], Counter, ScheduleList, Res):-
-%   NewCounter is Counter + 1,
-%   create_graph(ScheduleList, G),
-%   top_sort(G, _),
-%   add_path_to_schedule(P, c1, ScheduleList, [schedule(c1, Ts)|R]),
-%   predsort(compareNr, Ts, TsNew),
-%
-%   assign_cpu(Ps, NewCounter, [schedule(c1, TsNew)|R], Res).
+assign_cpu([P|Ps], Counter, ScheduleList, Res):-
+  NewCounter is Counter + 1,
+  create_graph(ScheduleList, G),
+  top_sort(G, _),
+  add_path_to_schedule(P, c1, ScheduleList, NewScheduleList),
+  assign_cpu(Ps, NewCounter, NewScheduleList, Res), !.
 
 
-get_core(Counter, Core):-
+get_mod_core(Counter, Core):-
   findall(C, core(C), Cores), length(Cores, LenCores),
   CoreNumberTmp is Counter mod LenCores, CoreNumber is CoreNumberTmp + 1,
   string_concat('c', CoreNumber, CoreStr), atom_string(Core, CoreStr).
 
+get_core_nr(Core, Nr):-
+  atom_string(Core, CoreStr),
+  string_concat('c', NrStr, CoreStr),
+  atom_number(NrStr, Nr).
 
-get_task_number(Task, Nr):-
+get_task_nr(Task, Nr):-
   atom_string(Task, TaskStr),
   string_concat('t', NrStr, TaskStr),
   atom_number(NrStr, Nr).
@@ -108,7 +109,7 @@ get_task_number(Task, Nr):-
 get_rndm_core(Cores, Core):-
   findall(C, core(C), Cores), length(Cores, LenCores),
   random(0, LenCores, CoreNumber),
-  get_core(CoreNumber, Core).
+  get_mod_core(CoreNumber, Core).
 
 
 get_root(Root):-
@@ -202,32 +203,28 @@ minProcList([process_cost(T1, C1, Ti1),
         minProcList([process_cost(T1, C1, Ti1)|Tail], Res)
     ).
 
-% add_path_to_schedule([], _, ScheduleList, ScheduleList).
-%
-% add_path_to_schedule([T|Ts], Core, ScheduleList, Res):-
-%   process_cost(T, Core, ET),
-%   add_pc_to_schedule(process_cost(T, Core, ET), ScheduleList, NewScheduleList),
-%   add_path_to_schedule(Ts, Core, NewScheduleList, Res).
-
-
 add_path_to_schedule(P, Core, ScheduleList, R):-
   add_path_to_schedule(P, Core, ScheduleList, [], R).
 
-add_path_to_schedule(P1, Core, [], Tmp, [schedule(Core, P1)|Tmp]).
+add_path_to_schedule(P1, Core, [], Tmp, R):-
+  append([schedule(Core, P1)], Tmp, TmpScheduleList),
+  predsort(compare_core_nr, TmpScheduleList, R).
 
-add_path_to_schedule(P1, Core, [schedule(Core, P0)], Tmp, [schedule(Core, SortedP)|Tmp]):-
+add_path_to_schedule(P1, Core, [schedule(Core, P0)], Tmp, R):-
   append(P0, P1, NewP),
-  predsort(compareNr, NewP, SortedP).
+  predsort(compare_task_nr, NewP, SortedP),
+  append(Tmp, [schedule(Core, SortedP)], TmpScheduleList),
+  predsort(compare_core_nr, TmpScheduleList, R).
 
 add_path_to_schedule(P1, Core, [schedule(Core, P0)|Rest], Tmp, R):-
   append(P0, P1, NewP),
-  predsort(compareNr, NewP, SortedP),
+  predsort(compare_task_nr, NewP, SortedP),
   append(Tmp, [schedule(Core, SortedP)], Tmp1),
-  append(Tmp1, Rest, R).
-
+  append(Tmp1, Rest, TmpScheduleList),
+  predsort(compare_core_nr, TmpScheduleList, R).
 
 add_path_to_schedule(P1, C0, [schedule(C1, P0)|Rest], Tmp, R):-
-  add_path_to_schedule(P1, C0, Rest, [schedule(C1, P0)|Tmp], R).
+  add_path_to_schedule(P1, C0, Rest, [schedule(C1, P0)|Tmp], R), !.
 
 
 % find max in list
@@ -296,48 +293,57 @@ compareLen(<, A, B):- length(A, ALen), length(B, BLen), ALen>=BLen.
 compareLast(<, A, B):-
   reverse(A, [LastA|_]),
   reverse(B, [LastB|_]),
-  get_task_number(LastA, LastANr),
-  get_task_number(LastB, LastBNr),
+  get_task_nr(LastA, LastANr),
+  get_task_nr(LastB, LastBNr),
   LastANr<LastBNr.
 
 compareLast(>, A, B):-
   reverse(A, [LastA|_]),
   reverse(B, [LastB|_]),
-  get_task_number(LastA, LastANr),
-  get_task_number(LastB, LastBNr),
+  get_task_nr(LastA, LastANr),
+  get_task_nr(LastB, LastBNr),
   LastANr>=LastBNr.
 
-
 compareLast1(<, [process_cost(FirstA, _, _)|_], [process_cost(FirstB, _, _)|_]):-
-  get_task_number(FirstA, FirstANr),
-  get_task_number(FirstB, FirstBNr),
+  get_task_nr(FirstA, FirstANr),
+  get_task_nr(FirstB, FirstBNr),
   FirstANr<FirstBNr.
 
 compareLast1(>, [process_cost(FirstA, _, _)|_], [process_cost(FirstB, _, _)|_]):-
-  get_task_number(FirstA, FirstANr),
-  get_task_number(FirstB, FirstBNr),
+  get_task_nr(FirstA, FirstANr),
+  get_task_nr(FirstB, FirstBNr),
   FirstANr>=FirstBNr.
 
 
-compareNr(<, A, B):-
-  get_task_number(A, ANr),
-  get_task_number(B, BNr),
+compare_task_nr(<, A, B):-
+  get_task_nr(A, ANr),
+  get_task_nr(B, BNr),
   ANr<BNr.
 
-compareNr(>, A, B):-
-  get_task_number(A, ANr),
-  get_task_number(B, BNr),
+compare_task_nr(>, A, B):-
+  get_task_nr(A, ANr),
+  get_task_nr(B, BNr),
   ANr>=BNr.
 
-compareNr1(<, process_cost(A,_, _), process_cost(B, _, _)):-
-  get_task_number(A, ANr),
-  get_task_number(B, BNr),
+compare_pc_task_nr(<, process_cost(A,_, _), process_cost(B, _, _)):-
+  get_task_nr(A, ANr),
+  get_task_nr(B, BNr),
   ANr<BNr.
 
-compareNr1(>, process_cost(A,_, _), process_cost(B, _, _)):-
-  get_task_number(A, ANr),
-  get_task_number(B, BNr),
+compare_pc_task_nr(>, process_cost(A,_, _), process_cost(B, _, _)):-
+  get_task_nr(A, ANr),
+  get_task_nr(B, BNr),
   ANr>=BNr.
+
+compare_core_nr(<, schedule(C0, _), schedule(C1, _)):-
+  get_core_nr(C0, C0Nr),
+  get_core_nr(C1, C1Nr),
+  C0Nr<C1Nr.
+
+compare_core_nr(>, schedule(C0, _), schedule(C1, _)):-
+  get_core_nr(C0, C0Nr),
+  get_core_nr(C1, C1Nr),
+  C0Nr>=C1Nr.
 
 make_pc_dep_edge([process_cost(EnablingTask, C0, ET0)-process_cost(DepTask, C1, ET1)]):-
   process_cost(EnablingTask, C0, ET0),
@@ -369,12 +375,6 @@ critical_path(Visited, Root, OldPaths, MaxPath):-
   critical_path(NewVisited, Root, NewPaths, MaxPath).
 
 
-% wave(P):-
-%   findall(T1-T0, depends_on(T0, T1, _), Edges),
-%   vertices_edges_to_ugraph([], Edges, G),
-%   top_sort(G, [Root|_]),
-%   wave_bfs(G, [process_cost(Root, c1, 10)], [], P).
-
 get_edges(Path, Res):-
   get_edges(Path, [], Res).
 
@@ -391,15 +391,15 @@ execution_time(ScheduleList, Res):-
   longest_path(Graph, Res), !.
 
 execution_time(ScheduleList, Res):-
-  execution_time(ScheduleList, 0, Res).
+  execution_time(ScheduleList, 0, Res), !.
 
 execution_time([schedule(C, Ts)|Tail], Max, Res):-
   maplist(extractET(C), Ts, ETs),
   sumlist(ETs, TotalET),
   ((TotalET > Max) -> NewMax is TotalET; NewMax is Max),
-  execution_time(Tail, NewMax, Res).
+  execution_time(Tail, NewMax, Res), !.
 
-execution_time([], Max, Max).
+execution_time([], Max, Max):- !.
 
 % % shortest path
 dfs([Current|_], Graph, Path):-
@@ -411,51 +411,6 @@ dfs([Current|Rest], Graph, Res):-
   children(Graph, Current, Children),
   append(Children, Rest, NewAgenda),
   dfs(NewAgenda, Graph, Res).
-
-% bfs(Graph, _, Paths, R):-
-%   vertices(Graph, Vs),
-%   length(Vs, LenVs),
-%   flatten(Paths, Ts),
-%   list_to_set(Ts, UniqueTasks),
-%   length(UniqueTasks, LenUniqueTasks),
-%   LenUniqueTasks = LenVs.
-
-wave_bfs(_, [], Paths, Paths):- !.
-
-wave_bfs(Graph, [Current|Rest], Tmp, R):-
-  wave_children(Graph, [Current], Children),
-  Children = [],
-  append(Rest,Children,NewAgenda),
-  reverse(Current, Path),
-  append([Path], Tmp, NewTmp),
-  wave_bfs(Graph, NewAgenda, NewTmp, R), !.
-
-wave_bfs(Graph, [Current|Rest], Tmp, R):-
-  (member(Current, Tmp)->
-    NewTmp = Tmp;
-    append([Current], Tmp, NewTmp)
-  ),
-  wave_children(Graph, [Current], Children),
-  % TODO: her wave method
-  set_cpu(Children, NewChildren),
-
-  append(Rest,NewChildren,NewAgenda),
-  wave_bfs(Graph, NewAgenda, NewTmp, R).
-
-
-% bfs(_, [], Paths, Paths):- !.
-%
-% bfs(Graph, [Current|Rest], Tmp, R):-
-%   children(Graph, Current, Children),
-%   Children = [],
-%   reverse(Current, Path),
-%   append([Path], Tmp, NewTmp),
-%   bfs(Graph, Rest, NewTmp, R).
-%
-% bfs(Graph, [Current|Rest], Tmp, R):-
-%   children(Graph, Current, Children),
-%   append(Rest,Children,NewAgenda),
-%   bfs(Graph, NewAgenda, Tmp, R).
 
 bfs([Current|Rest], Graph, Path):-
   children(Graph, Current, Children),
@@ -489,13 +444,7 @@ only_children(Graph, Node, SortedChildren):-
   findall(Child,
     neighbour(Graph, Node, Child),
   Children),
-  predsort(compareNr1, Children, SortedChildren).
-
-
-wave_children(Graph, [process_cost(Node, _, _)|_], Children):-
-  findall(Child,
-    neighbour(Graph, Node, Child),
-  Children).
+  predsort(compare_pc_task_nr, Children, SortedChildren).
 
 neighbour(Graph, Node, Neighbour):-
   neighbours(Node, Graph, AllNeighbours),
@@ -508,7 +457,6 @@ my_dfs(Visited, Task, Path, R):-
 
 % TODO: check!!!
 my_dfs(Visited, _, Path, R):- subtract(Path, Visited, R).
-% my_dfs(Visited, _, Path, Path):- not(subset(Path, Visited)).
 
 
 getPC(process_cost(T, c1, ET)):- process_cost(T, c1, ET).
@@ -528,41 +476,6 @@ getPC(schedule(C, Ts), Task, process_cost(Task, C, ET)):-
 getPC([_|Schedules], Task, Res):- getPC(Schedules, Task, Res), !.
 
 getPC([], _, _):- fail.
-
-
-maxPCs([], tuple([], 0)):- !.
-maxPCs([PCs|Tail], Res):-
-    sumPCs(PCs, Max),
-    maxPCs(Tail, tuple(PCs, Max), Res), !.
-
-maxPCs([], MaxTuple, MaxTuple).
-maxPCs([PCs|Tail], tuple(PCs0, Max0), Res):-
-  sumPCs(PCs, Sum),
-  (Sum > Max0 ->
-    maxPCs(Tail, tuple(PCs, Sum), Res)
-  ;
-    maxPCs(Tail, tuple(PCs0, Max0), Res)
-  ).
-
-
-sumPCs(PCs, Res):-
-  sumPCs(PCs, 0, Res).
-
-sumPCs([], Tmp, Tmp).
-
-sumPCs([process_cost(T0, C0, ET0),
-        process_cost(T1, C1, ET1)|PCs], Tmp, Res):-
-  % Note that sending 'X' megabytes of data, over a channel,
-  % takes Latency + X/Bandwidth ms.
-  (C0\=C1, (channel(C0, C1, Lat, Bwidth), depends_on(T1, T0, Data)) ->
-      Com = Lat + Data/Bwidth
-    ;
-      Com = 0
-  ),
-  Tmp1 is Tmp + ET0 + Com,
-  sumPCs([process_cost(T1, C1, ET1)|PCs], Tmp1, Res), !.
-
-sumPCs([process_cost(_, _, ET1)|_], Tmp, Res):- Res is Tmp + ET1.
 
 
 make_io_edges(ScheduleList, Schedule, Res):-
@@ -679,58 +592,35 @@ longest_path(G, [Cur|Rest], LenTo, R) :-
   add_dist(tuple(Cur, CurW), Nbs, LenTo, LenTo, [], NewLenTo),
   longest_path(G, Rest, NewLenTo, R).
 
-% no_deps([], _).
-% no_deps(Ts, [L|_]):-
-%   findall(T-T0, depends_on(T0, T, _), Edges),
-%   vertices_edges_to_ugraph([], Edges, G),
-%   bfs([[L]], G, [Nodes]),
-%
-%   subtract(Nodes, Ts, DiffList),
-%   DiffList = Nodes.
-%
-%
-% no_deps_wrapper([], _, _):-fail.
-%
-% no_deps_wrapper([schedule(C, Ts)|_], List, C):-
-%   no_deps(Ts, List).
-%
-% no_deps_wrapper([schedule(_, _)|Rest], List, R):-
-%   no_deps_wrapper(Rest, List, R).
-
 get_valid_core_number([schedule(C, [])], _, C).
 get_valid_core_number([schedule(C, [])|_], _, C).
 
 get_valid_core_number([schedule(C, Ts)|_], [First|_], C):-
   reverse(Ts, [Last|_]),
-  get_task_number(Last, LastNr),
-  get_task_number(First, FirstNr),
+  get_task_nr(Last, LastNr),
+  get_task_nr(First, FirstNr),
   FirstNr > LastNr.
 
 get_valid_core_number([_|Rest], L, R):-
   get_valid_core_number(Rest, L, R).
 
+hem(Res):-
+  % findall(C, core(C), Cores),
+  % init_scheduleList(Cores, [], [], TmpScheduleList),
+  % findall(T0-T1, depends_on(T1, T0, _), Edges),
+  % vertices_edges_to_ugraph([], Edges, G).
+  dep_sort_tasks(SortedTasks),
+  add_pc_list_to_schedule(SortedTasks, [], Res).
+
+init_scheduleList([], ScheduleList, _, ScheduleList).
+init_scheduleList([C|Cs], ScheduleList, Tmp, R):-
+  task(T), not(member(T, Tmp)),
+  add_path_to_schedule([T], C, ScheduleList, NewScheduleList),
+  append([T], Tmp, NewTmp),
+  init_scheduleList(Cs, NewScheduleList, NewTmp, R).
+
 
 test(ET):-
+  % hem(R).
   find_heuristically(ScheduleList),
   execution_time(ScheduleList, ET).
-%   execution_time(
-% [ schedule(c1,[t1,t2,t3,t4,t6,t7]),
-%   schedule(c2,[t5]),
-%   schedule(c3,[]),
-%   schedule(c4,[])
-% ], ET).
-  % meta_graph([[t1,t2,t3,t4,t5,t6,t8,t16,t39,t101,t265]], List, [], R),
-
-  % get_dep_list_wrapper(List, Deps, [], R).
-  % reverse(Deps, RevDeps),
-  % subtract(List, Deps, [First]),
-
-  % reverse(List, SList),
-  % execution_time(ScheduleList, G).
-
-  % execution_time(ScheduleList, G).
-  % wave(G),
-  % maxPCs([G], R).
-  % find_heuristically(List),
-  % assign_cpu(List, ScheduleList),
-  % execution_time(ScheduleList, G).
