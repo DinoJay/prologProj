@@ -7,15 +7,42 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 
+pretty_print([]).
+pretty_print([schedule(C, Ts)|Rest]):-
+  print(C),
+  print(Ts),
+  pretty_print(Rest).
+
+speedup(S, Speedup):-
+  find_optimal_seq(SeqOp),
+  execution_time(SeqOp, ETSeqOp),
+  execution_time(S, SET),
+  Speedup is ETSeqOp / SET.
+
+find_optimal_seq(Res):-
+  dep_sort_tasks(DepSortedTs),
+  findall(C, core(C), Cs),
+  maplist(assign_core(DepSortedTs), Cs, SolList),
+  min_ET(SolList, tuple(Res, _)), !.
+
+
+ find_optimal_seq(Res):-
+  et_sort(SortedTs),
+  findall(C, core(C), Cs),
+  maplist(assign_core(SortedTs), Cs, SolList),
+  min_ET(SolList, tuple(Res, _)), !.
+
+assign_core(Ts, C, tuple([schedule(C, Ts)], ET)):- execution_time([schedule(C, Ts)], ET).
 
 find_optimal(Res):-
   dep_sort_tasks(DepSortedTs),
-  ( (DepSortedTs \= []) ->
-    findall(tuple(Sol, ET), find_sol_wrapper(DepSortedTs, Sol, ET), SolList)
-  ;
-    et_sort(EtSortedTs),
-    findall(tuple(Sol, ET), find_sol_wrapper(EtSortedTs, Sol, ET), SolList)
-  ),
+  DepSortedTs \= [],
+  findall(tuple(Sol, ET), find_sol_exec_tuple(DepSortedTs, Sol, ET), SolList),
+  min_ET(SolList, tuple(Res, _)), !.
+
+find_optimal(Res):-
+  et_sort(EtSortedTs),
+  findall(tuple(Sol, ET), find_sol_exec_tuple(EtSortedTs, Sol, ET), SolList),
   min_ET(SolList, tuple(Res, _)), !.
 
 min_ET([Min],Min).
@@ -28,7 +55,7 @@ min_ET([tuple(_, ET0), tuple(S1, ET1)|T], Min):-
     ET0 > ET1,
     min_ET([tuple(S1, ET1)|T], Min).
 
-find_sol_wrapper(SortedTs, Solution, ET):-
+find_sol_exec_tuple(SortedTs, Solution, ET):-
   find_sol(SortedTs, [], Solution),
   execution_time(Solution, ET).
 
@@ -41,105 +68,13 @@ find_sol([], ScheduleList, ScheduleList).
 
 
 find_heuristically(Res):-
-  find_batch_sol(Res).
+  et_sort(SortedTasks),
+  add_pc_list_to_schedule(SortedTasks, [], [], Res), !.
 
 find_heuristically(Res):-
-  find_dag_sol(Res).
-
-
-
-find_dag_sol(Res):- find_dag_sol(0, [], Res).
-
-find_dag_sol(_, List, ScheduleList):-
-  flatten(List, Visited),
-  list_to_set(Visited, Tasks),
-  findall(T, task(T), AllTasks),
-  length(Tasks, L0), length(AllTasks, L1),
-  L0 = L1,
-  predsort(compareLen, List, SList),
-  assign_cpu(SList, ScheduleList).
-
-find_dag_sol(Counter, Paths, Res):-
-  flatten(Paths, Visited),
-  get_root(Visited, Root),
-  my_dfs(Visited, Root, [Root], NewPath),
-  append(Paths, [NewPath], NewPaths),
-  NewCounter is Counter + 1,
-  find_dag_sol(NewCounter, NewPaths, Res).
-
-
-assign_cpu(Ps, Res):-
-  findall(schedule(C, []), core(C), ScheduleList),
-  assign_cpu(Ps, 0, ScheduleList, Res).
-
-assign_cpu([], _, ScheduleList, ScheduleList).
-
-assign_cpu([P|Ps], Counter, ScheduleList, Res):-
-  get_valid_core_number(ScheduleList, P, Core),
-  % get_mod_core(Counter, Core),
-  % get_rndm_core(Core),
-  % core(Core),
-  NewCounter is Counter + 1,
-  create_graph(ScheduleList, G),
-  top_sort(G, _),
-  add_path_to_schedule(P, Core, ScheduleList, NewScheduleList),
-  assign_cpu(Ps, NewCounter, NewScheduleList, Res).
-
-assign_cpu([P|Ps], Counter, ScheduleList, Res):-
-  NewCounter is Counter + 1,
-  create_graph(ScheduleList, G),
-  top_sort(G, _),
-  add_path_to_schedule(P, c1, ScheduleList, NewScheduleList),
-  assign_cpu(Ps, NewCounter, NewScheduleList, Res), !.
-
-
-get_mod_core(Counter, Core):-
-  findall(C, core(C), Cores), length(Cores, LenCores),
-  CoreNumberTmp is Counter mod LenCores, CoreNumber is CoreNumberTmp + 1,
-  string_concat('c', CoreNumber, CoreStr), atom_string(Core, CoreStr).
-
-get_core_nr(Core, Nr):-
-  atom_string(Core, CoreStr),
-  string_concat('c', NrStr, CoreStr),
-  atom_number(NrStr, Nr).
-
-get_task_nr(Task, Nr):-
-  atom_string(Task, TaskStr),
-  string_concat('t', NrStr, TaskStr),
-  atom_number(NrStr, Nr).
-
-
-get_rndm_core(Core):-
-  findall(C, core(C), Cores), length(Cores, LenCores),
-  random(0, LenCores, CoreNumber),
-  get_mod_core(CoreNumber, Core).
-
-
-get_root(Root):-
-  get_root([], Root).
-
-get_root(Visited, Root):-
-  findall(A-B, depends_on(B, A, _), Edges),
-  vertices_edges_to_ugraph([], Edges, Graph),
-  del_vertices(Graph, Visited, NewGraph),
-  top_sort(NewGraph, [Root|_]).
-
-get_root(Graph, _):-
-  top_sort(Graph, [_|[Candid|_]]),
-  del_vertices(Graph, [Candid], NewGraph),
-  get_root(NewGraph, Candid).
-
-
-get_inv_root(Root):-
-  findall(A-B, depends_on(B, A, _), Edges),
-  vertices_edges_to_ugraph([], Edges, Graph),
-  transpose(Graph, TransGraph),
-  top_sort(TransGraph, [Root|_]).
-
-
-find_batch_sol(Res):-
-  et_sort(SortedTasks),
-  add_pc_list_to_schedule(SortedTasks, [], [], Res).
+  depends_on(_, _, _),
+  dep_sort_tasks(SortedTasks),
+  add_pc_list_to_schedule(SortedTasks, [], [], Res), !.
 
 add_pc_list_to_schedule([], _, ScheduleList, ScheduleList).
 
@@ -149,35 +84,20 @@ add_pc_list_to_schedule([T|Ts], LenTo, ScheduleList, Res):-
 
   minETList(ScheduleList, LenTo, PCs, NewLenTo, process_cost(Task, Core, MinTime)),
   add_pc_to_schedule(process_cost(Task, Core, MinTime), ScheduleList, NewScheduleList),
-
+  isSolution(solution(NewScheduleList)),
   add_pc_list_to_schedule(Ts, NewLenTo, NewScheduleList, Res).
 
 map_pc( T, C, process_cost(T, C, ET)):- process_cost(T, C, ET).
 
 % checks candidates for a solution. chooses the task and cpu which
 % increases the total execution time the least
-% minETList(_, [X], X) :- !.
-% minETList(ScheduleList, [process_cost(T1, C1, ET1), process_cost(T2, C2, ET2)|Tail], Res):-
-%   add_pc_to_schedule(process_cost(T1, C1, ET1), ScheduleList,
-%                        NewScheduleList1),
-%   simple_exec_time(NewScheduleList1, TotalET1),
-%   add_pc_to_schedule(process_cost(T2, C2, ET2), ScheduleList,
-%                        NewScheduleList2),
-%   simple_exec_time(NewScheduleList2, TotalET2),
-%   ( (TotalET1 < TotalET2) ->
-%       minETList(ScheduleList, [process_cost(T1, C1, ET1)|Tail], Res)
-%
-%   ;
-%       minETList(ScheduleList, [process_cost(T2, C2, ET2)|Tail], Res)
-%   ), !.
-
-
 minETList(ScheduleList, LenTo, [process_cost(T, C, ET)], NewLenTo, process_cost(T, C, ET)):-
   append(LenTo, [tuple(process_cost(T, C, ET), ET)], LenTo1),
   add_pc_to_schedule(process_cost(T, C, ET), ScheduleList, NewScheduleList1),
   incr_exec_time(NewScheduleList1, process_cost(T, C, ET), LenTo1, NewLenTo, _).
 
 minETList(ScheduleList, LenTo, [process_cost(T0, C0, ET0), process_cost(T1, C1, ET1)|Tail], ResLenT0, Res):-
+
   append(LenTo, [tuple(process_cost(T0, C0, ET0), ET0)], LenTo0),
   add_pc_to_schedule(process_cost(T0, C0, ET0), ScheduleList, NewScheduleList0),
   % add_path_to_schedule([T0], C0, ScheduleList, NewScheduleList0),
@@ -195,7 +115,7 @@ minETList(ScheduleList, LenTo, [process_cost(T0, C0, ET0), process_cost(T1, C1, 
       minETList(ScheduleList, LenTo, [process_cost(T1, C1, ET1)|Tail], ResLenT0, Res)
   ), !.
 
-% preprocessing: sorts task according to their execution time
+% sorts task according to their execution time
 et_sort(Res):-
   findall(T, task(T), Tasks),
   maplist(
@@ -212,43 +132,20 @@ extractET(tuple(_, ET), ET).
 % helper function for maplist above
 get_min_pc(T, Res):-
   findall(process_cost(T, C, Ti), process_cost(T, C, Ti), PCs),
-  minProcList(PCs, Res).
+  minPCList(PCs, Res).
 
 % gets the maximum processing cost in a list
 %  TODO: rename
-minProcList([X], X) :- !.
-minProcList([process_cost(T1, C1, Ti1),
+minPCList([X], X) :- !.
+minPCList([process_cost(T1, C1, Ti1),
              process_cost(T2, C2, Ti2)|Tail],
             Res):-
+            % TODO: change
     ( Ti1 > Ti2 ->
-        minProcList([process_cost(T2, C2, Ti2)|Tail], Res)
+        minPCList([process_cost(T2, C2, Ti2)|Tail], Res)
     ;
-        minProcList([process_cost(T1, C1, Ti1)|Tail], Res)
+        minPCList([process_cost(T1, C1, Ti1)|Tail], Res)
     ).
-
-add_path_to_schedule(P, Core, ScheduleList, R):-
-  add_path_to_schedule(P, Core, ScheduleList, [], R).
-
-add_path_to_schedule(P1, Core, [], Tmp, R):-
-  append([schedule(Core, P1)], Tmp, TmpScheduleList),
-  predsort(compare_core_nr, TmpScheduleList, R).
-
-add_path_to_schedule(P1, Core, [schedule(Core, P0)], Tmp, R):-
-  append(P0, P1, NewP),
-  predsort(compare_task_nr, NewP, SortedP),
-  append(Tmp, [schedule(Core, SortedP)], TmpScheduleList),
-  predsort(compare_core_nr, TmpScheduleList, R).
-
-add_path_to_schedule(P1, Core, [schedule(Core, P0)|Rest], Tmp, R):-
-  append(P0, P1, NewP),
-  predsort(compare_task_nr, NewP, SortedP),
-  append(Tmp, [schedule(Core, SortedP)], Tmp1),
-  append(Tmp1, Rest, TmpScheduleList),
-  predsort(compare_core_nr, TmpScheduleList, R).
-
-add_path_to_schedule(P1, C0, [schedule(C1, P0)|Rest], Tmp, R):-
-  add_path_to_schedule(P1, C0, Rest, [schedule(C1, P0)|Tmp], R), !.
-
 
 % find max in list
 maxList([A],A).
@@ -291,7 +188,6 @@ dep_sort_PCs(Sorted):-
 
 dep_sort_tasks(Res):-
   dep_sort_PCs(SortedPCs),
-  % TODO
   extract_list(SortedPCs, SortedTs),
   list_to_set(SortedTs, Res).
 
@@ -314,61 +210,6 @@ compareTime(<, process_cost(_, _, ET1), process_cost(_, _, ET2)):-
 compareLen(>, A, B):- length(A, ALen), length(B, BLen), ALen<BLen.
 compareLen(<, A, B):- length(A, ALen), length(B, BLen), ALen>=BLen.
 
-compareLast(<, A, B):-
-  reverse(A, [LastA|_]),
-  reverse(B, [LastB|_]),
-  get_task_nr(LastA, LastANr),
-  get_task_nr(LastB, LastBNr),
-  LastANr<LastBNr.
-
-compareLast(>, A, B):-
-  reverse(A, [LastA|_]),
-  reverse(B, [LastB|_]),
-  get_task_nr(LastA, LastANr),
-  get_task_nr(LastB, LastBNr),
-  LastANr>=LastBNr.
-
-compareLast1(<, [process_cost(FirstA, _, _)|_], [process_cost(FirstB, _, _)|_]):-
-  get_task_nr(FirstA, FirstANr),
-  get_task_nr(FirstB, FirstBNr),
-  FirstANr<FirstBNr.
-
-compareLast1(>, [process_cost(FirstA, _, _)|_], [process_cost(FirstB, _, _)|_]):-
-  get_task_nr(FirstA, FirstANr),
-  get_task_nr(FirstB, FirstBNr),
-  FirstANr>=FirstBNr.
-
-
-compare_task_nr(<, A, B):-
-  get_task_nr(A, ANr),
-  get_task_nr(B, BNr),
-  ANr<BNr.
-
-compare_task_nr(>, A, B):-
-  get_task_nr(A, ANr),
-  get_task_nr(B, BNr),
-  ANr>=BNr.
-
-compare_pc_task_nr(<, process_cost(A,_, _), process_cost(B, _, _)):-
-  get_task_nr(A, ANr),
-  get_task_nr(B, BNr),
-  ANr<BNr.
-
-compare_pc_task_nr(>, process_cost(A,_, _), process_cost(B, _, _)):-
-  get_task_nr(A, ANr),
-  get_task_nr(B, BNr),
-  ANr>=BNr.
-
-compare_core_nr(<, schedule(C0, _), schedule(C1, _)):-
-  get_core_nr(C0, C0Nr),
-  get_core_nr(C1, C1Nr),
-  C0Nr<C1Nr.
-
-compare_core_nr(>, schedule(C0, _), schedule(C1, _)):-
-  get_core_nr(C0, C0Nr),
-  get_core_nr(C1, C1Nr),
-  C0Nr>=C1Nr.
-
 make_pc_dep_edge([process_cost(EnablingTask, C0, ET0)-process_cost(DepTask, C1, ET1)]):-
   depends_on(DepTask, EnablingTask, _),
   process_cost(EnablingTask, C0, ET0),
@@ -383,17 +224,26 @@ make_root_edge(ScheduleList, [process_cost(Task, _, _)-process_cost(DepTask, C, 
   getPC(ScheduleList, DepTask, process_cost(DepTask, C, ET)).
 
 
-% execution time which reuses the distance list from the longest_path pred
 incr_exec_time(ScheduleList, PC, LenTo, NewLenTo, Res):-
   depends_on(_, _, _),
   create_graph(ScheduleList, Graph),
   predecessors(PC, Graph, PCs),
-  longest_path(Graph, PCs, LenTo, NewLenTo, Res), !.
+  my_longest_path(Graph, PCs, LenTo, NewLenTo, Res), !.
 
 incr_exec_time(ScheduleList, _, _, _, Res):-
   simple_exec_time(ScheduleList, Res).
 
-% execution time for schedulues with no dependencies
+predecessors(Node, Graph, Predecessors):-
+  transpose(Graph, RevGraph),
+  neighbours(Node, RevGraph, Predecessors).
+
+predecessors(_, _, []).
+
+execution_time(ScheduleList, Res):-
+  create_graph(ScheduleList, Graph),
+  top_sort(Graph, _),
+  longest_path(Graph, Res), !.
+
 simple_exec_time(ScheduleList, Res):-
   simple_exec_time(ScheduleList, 0, Res), !.
 
@@ -405,41 +255,14 @@ simple_exec_time([schedule(C, Ts)|Tail], Max, Res):-
 
 simple_exec_time([], Max, Max):- !.
 
-predecessors(Node, Graph, Predecessors):-
-  transpose(Graph, RevGraph),
-  neighbours(Node, RevGraph, Predecessors).
-predecessors(_, _, []).
-
-execution_time(ScheduleList, Res):-
-  create_graph(ScheduleList, Graph),
-  top_sort(Graph, _),
-  longest_path(Graph, Res), !.
-
-
-children(Graph, [Node|RestOfPath], SortedChildren):-
-  findall([Child, Node|RestOfPath],
-    neighbour(Graph, Node, Child),
-  Children),
-  predsort(compareLast1, Children, SortedChildren).
-
-only_children(Graph, Node, SortedChildren):-
+children(Graph, Node, Children):-
   findall(Child,
     neighbour(Graph, Node, Child),
-  Children),
-  predsort(compare_pc_task_nr, Children, SortedChildren).
+  Children).
 
 neighbour(Graph, Node, Neighbour):-
   neighbours(Node, Graph, AllNeighbours),
   member(Neighbour, AllNeighbours).
-
-my_dfs(Visited, Task, Path, R):-
-  depends_on(DepTask, Task, _),
-  append(Path, [DepTask], NewPath),
-  my_dfs(Visited, DepTask, NewPath, R), !.
-
-% TODO: check!!!
-my_dfs(Visited, _, Path, R):- subtract(Path, Visited, R).
-
 
 getPC(process_cost(T, c1, ET)):- process_cost(T, c1, ET).
 getPC(process_cost(T, c2, ET)):- process_cost(T, c2, ET).
@@ -539,12 +362,14 @@ add_dist(tuple(Cur, CurW), [Nb|Nbs], [tuple(_, _)|Tuples], OldTuples, Tmp, R):-
 init_length_to(process_cost(T, C, ET), tuple(process_cost(T, C, ET), ET)).
 get_PC_tuple(tuple(PC, _), PC).
 
+
 my_diff(List0, List1, R):-
   maplist(get_PC_tuple, List0, PCList0),
   maplist(get_PC_tuple, List1, PCList1),
   subtract(PCList1, PCList0, DiffList),
   copy_list(List1, DiffList, [], Rest),
   append(List0, Rest, R).
+
 
 copy_list([], _, R, R):- !.
 
@@ -556,14 +381,14 @@ copy_list([tuple(PC, W)|Rest], DiffList, Tmp, R):-
 copy_list([_|Rest], DiffList, Tmp, R):-
   copy_list(Rest, DiffList, Tmp, R), !.
 
-% reuses distance list from preceding run
-longest_path(G, Ts, LenTo, NewLenTo, Max):-
+
+my_longest_path(G, Ts, LenTo, NewLenTo, Max):-
+  % top_sort(G, PCs),
+  % maplist(init_length_to, PCs, LengthTo),
   longest_path(G, Ts, LenTo, NewLenTo),
   maplist(extractET, NewLenTo, ETList),
   max_list(ETList, Max).
 
-% finds the longest path in a graph, implementation of:
-% https://en.wikipedia.org/wiki/Longest_path_problem#Acyclic_graphs_and_critical_paths
 longest_path(G, Max):-
   top_sort(G, PCs),
   maplist(init_length_to, PCs, LengthTo),
@@ -575,24 +400,15 @@ longest_path(_, [], LengthTo, LengthTo):- !.
 
 longest_path(G, [Cur|Rest], LenTo, R) :-
   get_dist(Cur, LenTo, CurW),
-  only_children(G, Cur, Nbs),
+  children(G, Cur, Nbs),
   add_dist(tuple(Cur, CurW), Nbs, LenTo, LenTo, [], NewLenTo),
   longest_path(G, Rest, NewLenTo, R).
 
-get_valid_core_number([schedule(C, [])], _, C).
-get_valid_core_number([schedule(C, [])|_], _, C).
-
-get_valid_core_number([schedule(C, Ts)|_], [First|_], C):-
-  reverse(Ts, [Last|_]),
-  get_task_nr(Last, LastNr),
-  get_task_nr(First, FirstNr),
-  FirstNr > LastNr.
-
-get_valid_core_number([_|Rest], L, R):-
-  get_valid_core_number(Rest, L, R).
-
 test(ET):-
+  % hem(R)
   dep_sort_tasks(SortedTasks),
+  % findall(T, task(T), Tasks),
+  % predsort(compare_task_nr, Tasks, SortedTasks),
   add_pc_list_to_schedule(SortedTasks, [], [], ScheduleList),
   execution_time(ScheduleList, ET).
   % find_heuristically(ScheduleList),
