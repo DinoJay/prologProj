@@ -13,26 +13,34 @@ pretty_print([schedule(C, Ts)|Rest]):-
   print(Ts),
   pretty_print(Rest).
 
+
+speedup(solution(S), Speedup):-
+  speedup(S, Speedup).
+
 speedup(S, Speedup):-
   find_optimal_seq(SeqOp),
   execution_time(SeqOp, ETSeqOp),
   execution_time(S, SET),
   Speedup is ETSeqOp / SET.
 
+
 find_optimal_seq(Res):-
   dep_sort_tasks(DepSortedTs),
   findall(C, core(C), Cs),
   maplist(assign_core(DepSortedTs), Cs, SolList),
-  min_ET(SolList, tuple(Res, _)), !.
+  min_ET(SolList, tuple(Schedule, _)),
+  predsort(compare_core_nr, Schedule, Res), !.
 
 
- find_optimal_seq(Res):-
+find_optimal_seq(Res):-
   et_sort(SortedTs),
   findall(C, core(C), Cs),
   maplist(assign_core(SortedTs), Cs, SolList),
   min_ET(SolList, tuple(Res, _)), !.
 
+
 assign_core(Ts, C, tuple([schedule(C, Ts)], ET)):- execution_time([schedule(C, Ts)], ET).
+
 
 find_optimal(Res):-
   dep_sort_tasks(DepSortedTs),
@@ -44,6 +52,7 @@ find_optimal(Res):-
   et_sort(EtSortedTs),
   findall(tuple(Sol, ET), find_sol_exec_tuple(EtSortedTs, Sol, ET), SolList),
   min_ET(SolList, tuple(Res, _)), !.
+
 
 min_ET([Min],Min).
 
@@ -69,12 +78,14 @@ find_sol([], ScheduleList, ScheduleList).
 
 find_heuristically(Res):-
   et_sort(SortedTasks),
-  add_pc_list_to_schedule(SortedTasks, [], [], Res), !.
+  add_pc_list_to_schedule(SortedTasks, [], [], Schedule),
+  predsort(compare_core_nr, Schedule, Res), !.
 
 find_heuristically(Res):-
   depends_on(_, _, _),
   dep_sort_tasks(SortedTasks),
-  add_pc_list_to_schedule(SortedTasks, [], [], Res), !.
+  add_pc_list_to_schedule(SortedTasks, [], [], Schedule),
+  predsort(compare_core_nr, Schedule, Res), !.
 
 add_pc_list_to_schedule([], _, ScheduleList, ScheduleList).
 
@@ -84,7 +95,7 @@ add_pc_list_to_schedule([T|Ts], LenTo, ScheduleList, Res):-
 
   minETList(ScheduleList, LenTo, PCs, NewLenTo, process_cost(Task, Core, MinTime)),
   add_pc_to_schedule(process_cost(Task, Core, MinTime), ScheduleList, NewScheduleList),
-  isSolution(solution(NewScheduleList)),
+  top_sorted(NewScheduleList),
   add_pc_list_to_schedule(Ts, NewLenTo, NewScheduleList, Res).
 
 map_pc( T, C, process_cost(T, C, ET)):- process_cost(T, C, ET).
@@ -153,12 +164,36 @@ maxList([A|List],Max):- maxList(List,Max1),
                         (A>=Max1, Max=A; A<Max1, Max=Max1).
 
 
-% valid schedule --> valid core and valid tasks
-isSchedule(schedule(C, [T|Ts])):- core(C), isTaskSet(T, Ts).
-isTaskSet(T, [To|Ts]):- task(T), isTaskSet(To, Ts).
-isTaskSet(T, []):- task(T).
+isSolution(solution(ScheduleList)):-
+  depends_on(_, _, _),
+  create_graph(ScheduleList, Graph),
+  top_sort(Graph, Vertices),
+  length(Vertices, LenVertices),
+  findall(T, task(T), Ts),
+  length(Ts, LenTs),
+  LenVertices = LenTs,
+  maplist(extract_core, ScheduleList, Cores),
+  findall(C, core(C), AllCores),
+  contains(AllCores, Cores), !.
 
 isSolution(solution(ScheduleList)):-
+  maplist(extract_tasks, ScheduleList, UnflatTs),
+  flatten(UnflatTs, Ts),
+  length(Ts, LenTs),
+  findall(T, task(T), AllTs),
+  length(AllTs, LenAllTs),
+  LenTs = LenAllTs,
+  maplist(extract_core, ScheduleList, Cores),
+  findall(C, core(C), AllCores),
+  contains(AllCores, Cores), !.
+
+contains(_, []):- !.
+contains(List, [H|T]):- member(H, List), contains(List, T), !.
+
+extract_core(schedule(C, _), C).
+extract_tasks(schedule(_, Ts), Ts).
+
+top_sorted(ScheduleList):-
   create_graph(ScheduleList, Graph),
   top_sort(Graph,_).
 
@@ -201,6 +236,21 @@ extract_list([process_cost(T, _, _)|PCs], Tmp, Res):-
   append([T], Tmp, Tmp1),
   extract_list(PCs, Tmp1, Res).
 
+get_core_nr(Core, Nr):-
+  atom_string(Core, CoreStr),
+  string_concat('c', NrStr, CoreStr),
+  atom_number(NrStr, Nr).
+
+compare_core_nr(<, schedule(C0, _), schedule(C1, _)):-
+  get_core_nr(C0, C0Nr),
+  get_core_nr(C1, C1Nr),
+  C0Nr<C1Nr.
+
+compare_core_nr(>, schedule(C0, _), schedule(C1, _)):-
+  get_core_nr(C0, C0Nr),
+  get_core_nr(C1, C1Nr),
+  C0Nr>=C1Nr.
+
 % compare by time with respect to no_deps
 compareTime(>, process_cost(_, _, ET1), process_cost(_, _, ET2)):-
   ET1<ET2.
@@ -238,6 +288,9 @@ predecessors(Node, Graph, Predecessors):-
   neighbours(Node, RevGraph, Predecessors).
 
 predecessors(_, _, []).
+
+execution_time(solution(ScheduleList), Res):-
+  execution_time(ScheduleList, Res).
 
 execution_time(ScheduleList, Res):-
   create_graph(ScheduleList, Graph),
