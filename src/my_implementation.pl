@@ -8,10 +8,10 @@
 %
 
 pretty_print([]).
-pretty_print([schedule(C, Ts)|Rest]):-
-  print(C),
-  print(Ts),
-  pretty_print(Rest).
+pretty_print([schedule(C, Ts)|R]):-
+  write(C), write(": "),
+  writeln(Ts),
+  pretty_print(R).
 
 
 speedup(solution(S), Speedup):-
@@ -32,6 +32,7 @@ find_optimal_seq(Res):-
   predsort(compare_core_nr, Schedule, Res), !.
 
 
+% find optimal ET if one put all tasks on single cores
 find_optimal_seq(Res):-
   et_sort(SortedTs),
   findall(C, core(C), Cs),
@@ -42,18 +43,23 @@ find_optimal_seq(Res):-
 assign_core(Ts, C, tuple([schedule(C, Ts)], ET)):- execution_time([schedule(C, Ts)], ET).
 
 
+% find optimal solution for sets with dependencies
 find_optimal(Res):-
   dep_sort_tasks(DepSortedTs),
   DepSortedTs \= [],
   findall(tuple(Sol, ET), find_sol_exec_tuple(DepSortedTs, Sol, ET), SolList),
   min_ET(SolList, tuple(Res, _)), !.
 
+
+% find optimal solution for the two first batch sets
 find_optimal(Res):-
   et_sort(EtSortedTs),
   findall(tuple(Sol, ET), find_sol_exec_tuple(EtSortedTs, Sol, ET), SolList),
   min_ET(SolList, tuple(Res, _)), !.
 
 
+% find min schedule with minimum ET in a tuple list consisting of schedule and
+% ET
 min_ET([Min],Min).
 
 min_ET([tuple(S0, ET0), tuple(_, ET1)|T], Min):-
@@ -64,6 +70,8 @@ min_ET([tuple(_, ET0), tuple(S1, ET1)|T], Min):-
     ET0 > ET1,
     min_ET([tuple(S1, ET1)|T], Min).
 
+% helper predicate to constructuct one solution, used to above to find all
+% possible solutions
 find_sol_exec_tuple(SortedTs, Solution, ET):-
   find_sol(SortedTs, [], Solution),
   execution_time(Solution, ET).
@@ -76,17 +84,23 @@ find_sol([T|Ts], ScheduleList, Solution):-
 find_sol([], ScheduleList, ScheduleList).
 
 
+% find heuristically for batch sets, sorts task by ET
 find_heuristically(Res):-
   et_sort(SortedTasks),
   add_pc_list_to_schedule(SortedTasks, [], [], Schedule),
   predsort(compare_core_nr, Schedule, Res), !.
 
+% dependency version
 find_heuristically(Res):-
   depends_on(_, _, _),
   dep_sort_tasks(SortedTasks),
   add_pc_list_to_schedule(SortedTasks, [], [], Schedule),
   predsort(compare_core_nr, Schedule, Res), !.
 
+% add task one by one to the schedule governed by least impact metric.
+% Meaning, select the task which increases the current schedule the least
+% efficiency is preserved by keeping the LenTo list which holds the ET for all
+% predecessors
 add_pc_list_to_schedule([], _, ScheduleList, ScheduleList).
 
 add_pc_list_to_schedule([T|Ts], LenTo, ScheduleList, Res):-
@@ -118,7 +132,6 @@ minETList(ScheduleList, LenTo, [process_cost(T0, C0, ET0), process_cost(T1, C1, 
   add_pc_to_schedule(process_cost(T1, C1, ET1), ScheduleList, NewScheduleList1),
   % add_path_to_schedule([T1], C1, ScheduleList, NewScheduleList1),
   incr_exec_time(NewScheduleList1, process_cost(T1, C1, ET1), LenTo1, _, TotalET1),
-
   ( (TotalET0 < TotalET1) ->
       minETList(ScheduleList, LenTo, [process_cost(T0, C0, ET0)|Tail], ResLenT0, Res)
 
@@ -136,6 +149,7 @@ et_sort(Res):-
   predsort(compareTime, FlattedPCs, SortedPCs),
   maplist(extractTask, SortedPCs, Res).
 
+% helper
 extractTask(process_cost(T, _, _), T).
 extractET(C, T, ET):- process_cost(T, C, ET).
 extractET(tuple(_, ET), ET).
@@ -145,13 +159,11 @@ get_min_pc(T, Res):-
   findall(process_cost(T, C, Ti), process_cost(T, C, Ti), PCs),
   minPCList(PCs, Res).
 
-% gets the maximum processing cost in a list
-%  TODO: rename
+% gets the minimum processing cost in a list
 minPCList([X], X) :- !.
 minPCList([process_cost(T1, C1, Ti1),
              process_cost(T2, C2, Ti2)|Tail],
             Res):-
-            % TODO: change
     ( Ti1 > Ti2 ->
         minPCList([process_cost(T2, C2, Ti2)|Tail], Res)
     ;
@@ -163,7 +175,8 @@ maxList([A],A).
 maxList([A|List],Max):- maxList(List,Max1),
                         (A>=Max1, Max=A; A<Max1, Max=Max1).
 
-
+% checks if a solution is valid, applies topological sort, occurency check that
+% every core is only listed once and that all tasks are assigned
 isSolution(solution(ScheduleList)):-
   depends_on(_, _, _),
   create_graph(ScheduleList, Graph),
@@ -176,6 +189,7 @@ isSolution(solution(ScheduleList)):-
   findall(C, core(C), AllCores),
   contains(AllCores, Cores), !.
 
+% differes slightly for the batch sets, no top_sort!
 isSolution(solution(ScheduleList)):-
   maplist(extract_tasks, ScheduleList, UnflatTs),
   flatten(UnflatTs, Ts),
@@ -187,12 +201,14 @@ isSolution(solution(ScheduleList)):-
   findall(C, core(C), AllCores),
   contains(AllCores, Cores), !.
 
+% List contains element?
 contains(_, []):- !.
 contains(List, [H|T]):- member(H, List), contains(List, T), !.
 
 extract_core(schedule(C, _), C).
 extract_tasks(schedule(_, Ts), Ts).
 
+% checks if schedule is topologicaly sorted
 top_sorted(ScheduleList):-
   create_graph(ScheduleList, Graph),
   top_sort(Graph,_).
@@ -209,7 +225,6 @@ add_pc_to_schedule(process_cost(Task, Core, Cost), Sol, NewSol):-
 add(process_cost(Task, Core, _), schedule(Core, Tasks),
   schedule(Core, NewTasks)):-
       append(Tasks, [Task], NewTasks),
-      % predsort(compare_task_nr, TmpTasks, NewTasks),
       !.
 
 add(process_cost(_, _, _), schedule(Core1, Tasks), schedule(Core1, Tasks)).
@@ -226,6 +241,7 @@ dep_sort_tasks(Res):-
   extract_list(SortedPCs, SortedTs),
   list_to_set(SortedTs, Res).
 
+% extract tasks from processing_cost list
 extract_list(List, Res):-
   extract_list(List, [], OrderedList),
   reverse(OrderedList, Res).
@@ -236,6 +252,7 @@ extract_list([process_cost(T, _, _)|PCs], Tmp, Res):-
   append([T], Tmp, Tmp1),
   extract_list(PCs, Tmp1, Res).
 
+% get integer number from core
 get_core_nr(Core, Nr):-
   atom_string(Core, CoreStr),
   string_concat('c', NrStr, CoreStr),
@@ -260,6 +277,7 @@ compareTime(<, process_cost(_, _, ET1), process_cost(_, _, ET2)):-
 compareLen(>, A, B):- length(A, ALen), length(B, BLen), ALen<BLen.
 compareLen(<, A, B):- length(A, ALen), length(B, BLen), ALen>=BLen.
 
+% helper functions to create edges from dependencies
 make_pc_dep_edge([process_cost(EnablingTask, C0, ET0)-process_cost(DepTask, C1, ET1)]):-
   depends_on(DepTask, EnablingTask, _),
   process_cost(EnablingTask, C0, ET0),
@@ -269,11 +287,12 @@ make_pc_dep_edge(ScheduleList, [process_cost(Task, C1, ET1)-process_cost(DepTask
   depends_on(DepTask, Task, _),
   getPC(ScheduleList, Task, process_cost(Task, C1, ET1)), !.
 
-make_root_edge(ScheduleList, [process_cost(Task, _, _)-process_cost(DepTask, C, ET)]):-
+make_edge(ScheduleList, [process_cost(Task, _, _)-process_cost(DepTask, C, ET)]):-
   depends_on(DepTask, Task,  _),
   getPC(ScheduleList, DepTask, process_cost(DepTask, C, ET)).
 
 
+% execution time with the use of temporary solutions
 incr_exec_time(ScheduleList, PC, LenTo, NewLenTo, Res):-
   depends_on(_, _, _),
   create_graph(ScheduleList, Graph),
@@ -289,6 +308,7 @@ predecessors(Node, Graph, Predecessors):-
 
 predecessors(_, _, []).
 
+% execution time
 execution_time(solution(ScheduleList), Res):-
   execution_time(ScheduleList, Res).
 
@@ -297,6 +317,7 @@ execution_time(ScheduleList, Res):-
   top_sort(Graph, _),
   longest_path(Graph, Res), !.
 
+% faster execution time for batch sets
 simple_exec_time(ScheduleList, Res):-
   simple_exec_time(ScheduleList, 0, Res), !.
 
@@ -317,15 +338,14 @@ neighbour(Graph, Node, Neighbour):-
   neighbours(Node, Graph, AllNeighbours),
   member(Neighbour, AllNeighbours).
 
+% circumvent cut which is in some sets and restricts backtracking
 getPC(process_cost(T, c1, ET)):- process_cost(T, c1, ET).
 getPC(process_cost(T, c2, ET)):- process_cost(T, c2, ET).
 getPC(process_cost(T, c3, ET)):- process_cost(T, c3, ET).
 getPC(process_cost(T, c4, ET)):- process_cost(T, c4, ET).
 getPC(process_cost(T, C, ET)):- process_cost(T, C, ET), !.
 
-% TODO: broken, get process_costs for schedule
 getPC([Schedule|_], Task, Res):- getPC(Schedule, Task, Res).
-
 
 getPC(schedule(C, Ts), Task, process_cost(Task, C, ET)):-
   member(Task, Ts),
@@ -336,6 +356,7 @@ getPC([_|Schedules], Task, Res):- getPC(Schedules, Task, Res), !.
 getPC([], _, _):- fail.
 
 
+% construct edges for a graph for a given schedule
 make_io_edges(ScheduleList, Schedule, Res):-
   make_io_edges(ScheduleList, Schedule, [], Res).
 
@@ -345,7 +366,7 @@ make_io_edges(_, schedule(_, []), Edges, EdgesSet):-
 make_io_edges(Schedules, schedule(C, [T]), Edges0, Edges):-
   process_cost(T, C, ET),
   findall(process_cost(T, C, ET)-PC,
-    make_root_edge(Schedules, [process_cost(T, C, ET)-PC]),
+    make_edge(Schedules, [process_cost(T, C, ET)-PC]),
   DepEdges),
   append(Edges0, DepEdges, Edges1),
   make_io_edges(Schedules, schedule(C, []), Edges1, Edges), !.
@@ -359,15 +380,16 @@ make_io_edges(Schedules, schedule(C, [T1,T2|Ts]), Edges0, Res):-
   Edges0, Edges1),
 
   findall(process_cost(T1, C, ET1)-PC,
-    make_root_edge(Schedules, [process_cost(T1, C, ET1)-PC]),
+    make_edge(Schedules, [process_cost(T1, C, ET1)-PC]),
   OtherEdges),
 
   append( OtherEdges, Edges1, Edges2),
   make_io_edges(Schedules, schedule(C, [T2|Ts]), Edges2, Res), !.
 
+
+% create graph for a schedule, uses SWI prolog's digraph implementation
 create_graph(ScheduleList, Res):-
   create_graph(ScheduleList, ScheduleList, [], Res).
-
 
 create_graph(_, [], Edges, Graph):-
   vertices_edges_to_ugraph([], Edges, Graph), !.
@@ -382,6 +404,7 @@ create_graph(ScheduleList, [schedule(C, [T|Ts])|Tail], Edges0, Res):-
   create_graph(ScheduleList, Tail, Edges2, Res).
 
 
+% get distance or temporary costs from a tuple list
 get_dist(PC, [tuple(PC, W)], W):- !.
 get_dist(PC, [tuple(PC, W)|_], W):- !.
 
@@ -390,6 +413,7 @@ get_dist(PC, [tuple(_, _)|Rest], R):-
 
 get_dist(_, [], _):- !.
 
+% calculationg communication costs
 get_comm_cost(process_cost(CurT, CurC, _), process_cost(NbT, NbC, _), Comm):-
   (CurC\=NbC, (channel(CurC, NbC, Lat, Bwidth), depends_on(NbT, CurT, Data)) ->
       Comm = Lat + Data/Bwidth
@@ -398,6 +422,7 @@ get_comm_cost(process_cost(CurT, CurC, _), process_cost(NbT, NbC, _), Comm):-
   ).
 
 
+% add distance to a node to the distance list
 add_dist(_, [], _, OldTuples, Tmp, R):-
   my_diff(Tmp, OldTuples, R), !.
 
@@ -435,13 +460,17 @@ copy_list([_|Rest], DiffList, Tmp, R):-
   copy_list(Rest, DiffList, Tmp, R), !.
 
 
+% get longest path in graph realized with the distance list measured by ET
+% writes the ETs for tasks TS in NewLenTo
+% here LenTo can be reused form previous run in MinETList in find_heuristically
+% saves lots of time
 my_longest_path(G, Ts, LenTo, NewLenTo, Max):-
-  % top_sort(G, PCs),
-  % maplist(init_length_to, PCs, LengthTo),
   longest_path(G, Ts, LenTo, NewLenTo),
   maplist(extractET, NewLenTo, ETList),
   max_list(ETList, Max).
 
+% standard version of longest_path, for more info see:
+% https://en.wikipedia.org/wiki/Longest_path_problem#Acyclic_graphs_and_critical_paths
 longest_path(G, Max):-
   top_sort(G, PCs),
   maplist(init_length_to, PCs, LengthTo),
@@ -457,11 +486,10 @@ longest_path(G, [Cur|Rest], LenTo, R) :-
   add_dist(tuple(Cur, CurW), Nbs, LenTo, LenTo, [], NewLenTo),
   longest_path(G, Rest, NewLenTo, R).
 
+
+% predicate for tests
 test(ET):-
-  % hem(R)
   dep_sort_tasks(SortedTasks),
-  % findall(T, task(T), Tasks),
-  % predsort(compare_task_nr, Tasks, SortedTasks),
   add_pc_list_to_schedule(SortedTasks, [], [], ScheduleList),
   execution_time(ScheduleList, ET).
   % find_heuristically(ScheduleList),
