@@ -179,6 +179,7 @@ maxList([A|List],Max):- maxList(List,Max1),
 % every core is only listed once and that all tasks are assigned
 isSolution(solution(ScheduleList)):-
   depends_on(_, _, _),
+  !,
   create_graph(ScheduleList, Graph),
   top_sort(Graph, Vertices),
   length(Vertices, LenVertices),
