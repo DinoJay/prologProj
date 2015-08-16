@@ -17,8 +17,6 @@
 % It constructs a solution by adding tasks one by one in topological sorting to
 % schedule.
 %
-% Important helpers:
-%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 
