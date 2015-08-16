@@ -1,9 +1,24 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 %%%  My Implementation %%%
-% quite sketchy, but first important functions:
-% find_heuristically, find_one
-% check below
+% find_optimal
+% generates all possible solutions and picks the best
+%
+% find_heuristically
+% based on "chooseMinPC", selecting the minimal processing_cost() which increases
+% the ET the least and then adding it to the schedule with "add_pc_to_schedule"
+%
+% execution_time
+% computes the ET with the longest path algorithm. It uses caching to keep the
+% ET of predecessors of the current task. execution_time traverses the schedule
+% in topological ordering if possible. In each iteration the direct predecessors
+% are looked up and updated with the ET of the current task.
+% find_heuristically reuses this cache in its iterations,
+% It constructs a solution by adding tasks one by one in topological sorting to
+% schedule.
+%
+% Important helpers:
+%
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%
 %
 
@@ -12,7 +27,6 @@ pretty_print([schedule(C, Ts)|R]):-
   write(C), write(": "),
   writeln(Ts),
   pretty_print(R).
-
 
 speedup(solution(S), Speedup):-
   speedup(S, Speedup).
@@ -24,6 +38,7 @@ speedup(S, Speedup):-
   Speedup is ETSeqOp / SET.
 
 
+% find optimal ET if one put all tasks on single cores
 find_optimal_seq(Res):-
   dep_sort_tasks(DepSortedTs),
   findall(C, core(C), Cs),
@@ -31,8 +46,6 @@ find_optimal_seq(Res):-
   min_ET(SolList, tuple(Schedule, _)),
   predsort(compare_core_nr, Schedule, Res), !.
 
-
-% find optimal ET if one put all tasks on single cores
 find_optimal_seq(Res):-
   et_sort(SortedTs),
   findall(C, core(C), Cs),
@@ -107,36 +120,36 @@ add_pc_list_to_schedule([T|Ts], LenTo, ScheduleList, Res):-
   findall(C, core(C), Cores),
   maplist(map_pc(T), Cores, PCs),
 
-  minETList(ScheduleList, LenTo, PCs, NewLenTo, process_cost(Task, Core, MinTime)),
+  chooseMinPC(ScheduleList, LenTo, PCs, NewLenTo, process_cost(Task, Core, MinTime)),
   add_pc_to_schedule(process_cost(Task, Core, MinTime), ScheduleList, NewScheduleList),
+  % important, if it fails jump to the batch version below
   top_sorted(NewScheduleList),
   add_pc_list_to_schedule(Ts, NewLenTo, NewScheduleList, Res).
 
 map_pc( T, C, process_cost(T, C, ET)):- process_cost(T, C, ET).
 
+% batch version
 % checks candidates for a solution. chooses the task and cpu which
 % increases the total execution time the least
-minETList(ScheduleList, LenTo, [process_cost(T, C, ET)], NewLenTo, process_cost(T, C, ET)):-
+chooseMinPC(ScheduleList, LenTo, [process_cost(T, C, ET)], NewLenTo, process_cost(T, C, ET)):-
   append(LenTo, [tuple(process_cost(T, C, ET), ET)], LenTo1),
   add_pc_to_schedule(process_cost(T, C, ET), ScheduleList, NewScheduleList1),
   incr_exec_time(NewScheduleList1, process_cost(T, C, ET), LenTo1, NewLenTo, _).
 
-minETList(ScheduleList, LenTo, [process_cost(T0, C0, ET0), process_cost(T1, C1, ET1)|Tail], ResLenT0, Res):-
+chooseMinPC(ScheduleList, LenTo, [process_cost(T0, C0, ET0), process_cost(T1, C1, ET1)|Tail], ResLenT0, Res):-
 
   append(LenTo, [tuple(process_cost(T0, C0, ET0), ET0)], LenTo0),
   add_pc_to_schedule(process_cost(T0, C0, ET0), ScheduleList, NewScheduleList0),
-  % add_path_to_schedule([T0], C0, ScheduleList, NewScheduleList0),
   incr_exec_time(NewScheduleList0, process_cost(T0, C0, ET0), LenTo0, _, TotalET0),
 
   append(LenTo, [tuple(process_cost(T1, C1, ET1), ET1)], LenTo1),
   add_pc_to_schedule(process_cost(T1, C1, ET1), ScheduleList, NewScheduleList1),
-  % add_path_to_schedule([T1], C1, ScheduleList, NewScheduleList1),
   incr_exec_time(NewScheduleList1, process_cost(T1, C1, ET1), LenTo1, _, TotalET1),
   ( (TotalET0 < TotalET1) ->
-      minETList(ScheduleList, LenTo, [process_cost(T0, C0, ET0)|Tail], ResLenT0, Res)
+      chooseMinPC(ScheduleList, LenTo, [process_cost(T0, C0, ET0)|Tail], ResLenT0, Res)
 
   ;
-      minETList(ScheduleList, LenTo, [process_cost(T1, C1, ET1)|Tail], ResLenT0, Res)
+      chooseMinPC(ScheduleList, LenTo, [process_cost(T1, C1, ET1)|Tail], ResLenT0, Res)
   ), !.
 
 % sorts task according to their execution time
